@@ -1,0 +1,51 @@
+/* Estilo da página que envolve o canvas do jogo */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at top, #2b2d42, #0d0e16);
+  font-family: "Trebuchet MS", Arial, sans-serif;
+  color: #f1f1f1;
+}
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+}
+
+.titulo {
+  font-size: 1.8rem;
+  letter-spacing: 1px;
+  text-shadow: 3px 3px 0 #000;
+}
+
+.titulo span {
+  color: #ff4d4d;
+}
+
+/* O canvas escala para caber na tela mantendo a proporção 16:9 */
+#jogo {
+  width: min(960px, 95vw);
+  aspect-ratio: 16 / 9;
+  border: 4px solid #111;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  image-rendering: pixelated;
+  background: #6ec6ff;
+}
+
+.dica {
+  font-size: 0.9rem;
+  opacity: 0.7;
+}
