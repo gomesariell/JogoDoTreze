@@ -1,8 +1,16 @@
 // =====================================================================
 // As Aventuras de Seu Fartura — jogo de plataforma 2D (sátira fictícia)
-// Etapa 7: chefão "Doutor Burocracia" no fim da Fase 3.
-// Os dados de cada fase ficam em fases.js; este arquivo tem a lógica e o
-// desenho, que funcionam para qualquer fase.
+//
+// Os DADOS de cada fase ficam em fases.js. Este arquivo tem a LÓGICA e o
+// DESENHO, que funcionam para qualquer fase. Organização do arquivo:
+//
+//   1. Constantes, estado do jogo e personagem
+//   2. Carregar fases (transforma os dados de fases.js em retângulos)
+//   3. Teclado (A, D, W, Enter/R)
+//   4. Lógica: física, câmera, itens, dano, Fiscais, espinhos, chegada
+//   5. Chefão "Doutor Burocracia" e seus processos
+//   6. Desenho: cenário, prédios, plataformas, itens, personagens, HUD, telas
+//   7. Loop principal (atualizar → desenhar, ~60 vezes por segundo)
 // =====================================================================
 
 // ---------- Configuração do canvas ----------
@@ -38,6 +46,7 @@ const CHEFE_ALTURA = 88;
 const GRAVIDADE_PROCESSO = 900;   // os papéis caem em arco
 const TEMPO_VOO_PROCESSO = 1.05;  // quanto tempo um papel leva até o chão
 const FORCA_QUIQUE = 650;         // pulo do jogador depois de pisar no chefe
+const RECUO_PORTA_ARENA = 58;     // a arena fecha logo depois da escadaria (arenaX - 58)
 
 // ---------- Estado do jogo ----------
 const estado = {
@@ -190,6 +199,7 @@ function tentarDeNovo() {
 
 // Depois da vitória: vai para a próxima fase (ou recomeça se zerou o jogo)
 function proximaFase() {
+  // o checkpoint só vale para a fase em que foi salvo
   estado.checkpointX = null;
   if (estado.faseAtual + 1 < FASES.length) {
     carregarFase(estado.faseAtual + 1);
@@ -198,6 +208,7 @@ function proximaFase() {
   }
 }
 
+// A fase atual é a última do array FASES?
 function ehUltimaFase() {
   return estado.faseAtual === FASES.length - 1;
 }
@@ -283,8 +294,13 @@ function atualizarMoveis(dt) {
   }
 }
 
+// Física do jogador em 6 passos: teclado → aceleração → pulo → gravidade
+// → mover e colidir no eixo X → mover e colidir no eixo Y
 function atualizarJogador(dt) {
   const j = jogador;
+
+  // conta o tempo de invencibilidade (pisca depois de levar dano)
+  j.invencivel = Math.max(0, j.invencivel - dt);
 
   // 1) Direção escolhida pelo teclado: -1 esquerda, 0 parado, 1 direita
   //    (fora da tela "jogando", o controle é desligado)
@@ -322,7 +338,7 @@ function atualizarJogador(dt) {
     j.vx = 0;
   }
   // não deixa sair das bordas da fase (nem fugir da arena do chefão)
-  const limiteEsquerdo = chefe && chefe.ativo ? chefe.arenaX - 58 : 0;
+  const limiteEsquerdo = chefe && chefe.ativo ? chefe.arenaX - RECUO_PORTA_ARENA : 0;
   j.x = Math.max(limiteEsquerdo, Math.min(j.x, fase.largura - j.largura));
 
   // 6) Move no eixo Y e resolve colisões de cima/baixo
@@ -388,8 +404,6 @@ function podeLevarDano() {
 
 // Fiscais patrulham e tiram uma vida se encostarem no jogador
 function atualizarInimigos(dt) {
-  jogador.invencivel = Math.max(0, jogador.invencivel - dt);
-
   for (const f of inimigos) {
     // anda e vira ao chegar no limite da patrulha
     f.x += f.direcao * f.velocidade * dt;
@@ -422,16 +436,16 @@ function atualizarArmadilhas() {
 function verificarChegada() {
   if (estado.tela !== "jogando" || fase.bandeiraX === null) return;
   if (jogador.x + jogador.largura < fase.bandeiraX) return;
-  vencerFase();
+  vencerFase("CHEGOU!");
 }
 
-// Fim da fase: desliga o controle e solta confetes
-function vencerFase() {
+// Fim da fase: desliga o controle, mostra um texto e solta confetes
+function vencerFase(texto) {
   estado.tela = "vitoria";
   estado.tempoTela = 0;
   jogador.vx = 0;
   jogador.invencivel = 0;
-  criarTexto("CHEGOU!", jogador.x + jogador.largura / 2, jogador.y - 10, "#ffd700");
+  criarTexto(texto, jogador.x + jogador.largura / 2, jogador.y - 10, "#ffd700");
 
   // solta confetes do topo da tela
   const cores = ["#ffd700", "#ff4d4d", "#4aa8ff", "#7CFC00", "#ffffff", "#ff8c00"];
@@ -453,6 +467,7 @@ function vencerFase() {
 // → "derrotado" (vida chegou a zero).
 // =====================================================================
 
+// Monta o objeto do chefão a partir dos dados da fase
 function criarChefe(dados) {
   return {
     nome: dados.nome,
@@ -502,8 +517,9 @@ function lancarProcessos() {
   }
 }
 
+// Um passo da luta: ativa a arena, roda o estado atual e checa o contato
 function atualizarChefe(dt) {
-  if (!chefe) return;
+  if (!chefe) return; // fase sem chefão
   const c = chefe;
   const j = jogador;
   c.piscando = Math.max(0, c.piscando - dt);
@@ -539,7 +555,8 @@ function atualizarChefe(dt) {
   } else if (c.estado === "atordoado") {
     if (c.timer <= 0) { c.estado = "andando"; c.timer = 0.8; }
   } else if (c.estado === "derrotado") {
-    if (c.timer <= 0 && estado.tela === "jogando") vencerFase();
+    // espera ele terminar de cair antes de mostrar a vitória
+    if (c.timer <= 0 && estado.tela === "jogando") vencerFase("VENCEU!");
     return;
   }
 
@@ -630,16 +647,16 @@ for (let i = 0; i < 80; i++) {
   });
 }
 
-// Prédios ao fundo (a cidade do país fictício)
+// Prédios ao fundo (a cidade do país fictício), lado a lado com espaços
 const predios = [];
-let px = 0;
-while (px < LARGURA * 2) {
+let proximoPredioX = 0;
+while (proximoPredioX < LARGURA * 2) {
   const largura = 50 + Math.random() * 70;
   const altura = 80 + Math.random() * 140;
-  predios.push({ x: px, largura, altura });
-  px += largura + 10 + Math.random() * 30;
+  predios.push({ x: proximoPredioX, largura, altura });
+  proximoPredioX += largura + 10 + Math.random() * 30;
 }
-const LARGURA_CIDADE = px; // usado para repetir os prédios infinitamente
+const LARGURA_CIDADE = proximoPredioX; // usado para repetir os prédios infinitamente
 
 // Céu em degradê com 3 cores
 function desenharCeu(cores) {
@@ -706,6 +723,7 @@ function desenharNuvem(x, y, escala, cor) {
   ctx.fill();
 }
 
+// Todas as nuvens, deslizando devagar e dando a volta na tela
 function desenharNuvens(cor) {
   const faixa = LARGURA + 200; // espaço em que as nuvens dão a volta
   for (const n of nuvens) {
@@ -1085,6 +1103,7 @@ function desenharBloco(x, y, largura, altura, cores) {
   ctx.strokeRect(x + 1, y + 1, largura - 2, altura - 2);
 }
 
+// Plataformas fixas (só as que aparecem na tela)
 function desenharPlataformas() {
   for (const p of plataformas) {
     if (p.chao) continue; // o chão já foi desenhado no cenário
