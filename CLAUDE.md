@@ -4,7 +4,8 @@
 - Apenas **HTML, CSS e JavaScript puro**. Desenho feito no `<canvas>`.
 - **Sem dependências**: nada de bibliotecas, frameworks, npm, build ou CDN.
 - O jogo deve abrir com um duplo clique no `index.html`.
-- Manter a estrutura de arquivos: `index.html`, `style.css`, `game.js`. Só criar novos arquivos se for realmente necessário.
+- Manter a estrutura de arquivos: `index.html`, `style.css`, `fases.js`, `game.js`. Só criar novos arquivos se for realmente necessário.
+- `fases.js` contém **apenas dados** (array `FASES`); toda lógica e desenho fica em `game.js`. Uma fase nova deve ser só um objeto novo no array, sem mudar a lógica.
 
 ## Código
 - Código **simples e comentado**, em português, fácil de um iniciante entender.

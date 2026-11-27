@@ -1,6 +1,7 @@
 // =====================================================================
 // As Aventuras de Seu Fartura — jogo de plataforma 2D (sátira fictícia)
-// Etapa 4: Fase 1 "Prefeitura" com bandeira de chegada, vitória e game over.
+// Etapa 6: sistema de fases. Os dados de cada fase ficam em fases.js;
+// este arquivo tem a lógica e o desenho, que funcionam para qualquer fase.
 // =====================================================================
 
 // ---------- Configuração do canvas ----------
@@ -20,23 +21,39 @@ const FORCA_PULO = 720;           // velocidade inicial do pulo (~130px de altur
 const TEMPO_COYOTE = 0.1;         // pode pular logo depois de sair da beirada
 const TEMPO_BUFFER_PULO = 0.12;   // aperto de pulo "lembrado" antes de tocar o chão
 
-// ---------- Estado do jogo ----------
-// "camera" é quanto o mundo já andou para a direita (segue o jogador).
+// ---------- Regras do jogo ----------
 const VIDAS_INICIAIS = 3;
 const VALOR_ITEM = 100;           // quanto vale cada nota de dinheiro
 const TEMPO_INVENCIVEL = 1.5;     // segundos piscando depois de levar dano
+const FISCAL_LARGURA = 34;
+const FISCAL_ALTURA = 48;
+const TAMANHO_ITEM = 24;          // caixa de colisão quadrada das notas
+const ALTURA_MOVEL = 24;          // espessura das plataformas móveis
+const ALTURA_ESPINHO = 18;
 
+// ---------- Estado do jogo ----------
 const estado = {
-  camera: 0,
-  tempo: 0,          // tempo total em segundos (usado em animações)
-  pontos: 0,         // dinheiro acumulado (R$)
+  camera: 0,           // quanto o mundo já andou para a direita (segue o jogador)
+  tempo: 0,            // tempo total em segundos (usado em animações)
+  pontos: 0,           // dinheiro acumulado (R$)
+  pontosInicioFase: 0, // para voltar a esse valor ao tentar a fase de novo
   vidas: VIDAS_INICIAIS,
-  tela: "jogando",   // "jogando", "vitoria" ou "gameover"
-  tempoTela: 0,      // há quanto tempo está na tela atual (para animações)
-  tempoFase: 0,      // há quanto tempo a fase começou (banner de abertura)
-  textos: [],        // textinhos flutuantes tipo "+R$100"
-  confetes: [],      // festa na vitória
+  faseAtual: 0,        // índice no array FASES
+  tela: "jogando",     // "jogando", "vitoria" ou "gameover"
+  tempoTela: 0,        // há quanto tempo está na tela atual (para animações)
+  tempoFase: 0,        // há quanto tempo a fase começou
+  textos: [],          // textinhos flutuantes tipo "+R$100"
+  confetes: [],        // festa na vitória
 };
+
+// Dados da fase carregada (preenchidos por carregarFase)
+let fase = null;       // o objeto da fase atual em FASES
+let plataformas = [];  // plataformas fixas (inclui o chão)
+let moveis = [];       // plataformas que se mexem
+let solidos = [];      // fixas + móveis: tudo em que o jogador pode pisar
+let armadilhas = [];   // espinhos
+let itens = [];        // notas de dinheiro
+let inimigos = [];     // Fiscais
 
 // ---------- Personagem ----------
 const jogador = {
@@ -48,112 +65,71 @@ const jogador = {
   vx: 0,               // velocidade horizontal
   vy: 0,               // velocidade vertical (positivo = para baixo)
   noChao: false,
+  sobre: null,         // plataforma em que está pisando (para andar junto com as móveis)
   olhandoDireita: true,
   tempoCoyote: 0,
   bufferPulo: 0,
-  itensColetados: 0,   // quanto mais itens, maior o saco de dinheiro
   invencivel: 0,       // tempo restante de invencibilidade após dano
 };
 
 // =====================================================================
-// FASE 1 — PREFEITURA
-// Todas as posições usam "acima" = quantos pixels acima do chão.
+// CARREGAR FASES
+// Transforma os dados de fases.js (em "pixels acima do chão") em
+// retângulos com x, y, largura e altura que a física entende.
 // =====================================================================
-const FISCAL_LARGURA = 34;
-const FISCAL_ALTURA = 48;
-const TAMANHO_ITEM = 24; // caixa de colisão quadrada das notas
 
-// Atalho para criar uma plataforma (o topo fica "acima" pixels acima do chão)
-function bloco(x, acima, largura, altura = 32) {
-  return { x, y: CHAO_Y - acima, largura, altura };
-}
+function carregarFase(indice) {
+  estado.faseAtual = indice;
+  fase = FASES[indice];
 
-const FASE_1 = {
-  numero: 1,
-  nome: "Prefeitura",
-  largura: 4000,       // tamanho total da fase em pixels
-  bandeiraX: 3560,     // encostar no mastro conclui a fase
-  prefeituraX: 3650,   // onde fica o prédio da Prefeitura (decoração)
-
-  plataformas: [
-    bloco(350, 110, 160),
-    bloco(600, 210, 128),
-    bloco(850, 120, 192),
-    bloco(1150, 100, 96),
-    bloco(1300, 200, 96),
-    bloco(1450, 300, 160),
-    bloco(1800, 64, 64, 64),  // bloco no chão
-    bloco(2000, 130, 224),
-    bloco(2350, 96, 64, 96),  // muro alto
-    bloco(2550, 120, 160),
-    bloco(2800, 220, 192),
-    bloco(3100, 140, 128),
-    // escadaria até a Prefeitura
-    bloco(3250, 32, 64, 32),
-    bloco(3314, 64, 64, 64),
-    bloco(3378, 96, 64, 96),
-  ],
-
-  // centro de cada nota de dinheiro: [x, acima]
-  itens: [
-    [250, 30],
-    [390, 140], [450, 140],
-    [664, 240],
-    [890, 150], [950, 150], [1010, 150],
-    [1100, 30],
-    [1198, 130],
-    [1348, 230],
-    [1500, 330], [1560, 330],
-    [1650, 30],
-    [1832, 95],
-    [2050, 160], [2110, 160], [2170, 160],
-    [2382, 130],
-    [2480, 30],
-    [2600, 150], [2660, 150],
-    [2860, 250], [2930, 250],
-    [3164, 170],
-    [3282, 62], [3346, 94], [3410, 126],
-    [3480, 30],
-  ],
-
-  // Fiscais: andam de um lado para o outro entre "min" e "max"
-  fiscais: [
-    { x: 560,  acima: 0,   min: 530,  max: 820,                   velocidade: 80 },
-    { x: 2050, acima: 130, min: 2000, max: 2224 - FISCAL_LARGURA, velocidade: 60 },
-    { x: 2500, acima: 0,   min: 2430, max: 2780,                  velocidade: 100 },
-    { x: 3000, acima: 0,   min: 2950, max: 3250 - FISCAL_LARGURA, velocidade: 90 },
-  ],
-};
-
-const MUNDO_LARGURA = FASE_1.largura;
-
-// O chão também é uma "plataforma", só que desenhado separado.
-const plataformas = [
-  { x: 0, y: CHAO_Y, largura: MUNDO_LARGURA, altura: ALTURA - CHAO_Y, chao: true },
-  ...FASE_1.plataformas,
-];
-
-let itens = [];
-let inimigos = [];
-
-// Coloca tudo no estado inicial (usado no começo e ao recomeçar)
-function reiniciarJogo() {
-  estado.pontos = 0;
-  estado.vidas = VIDAS_INICIAIS;
   estado.tela = "jogando";
   estado.tempoTela = 0;
   estado.tempoFase = 0;
   estado.textos = [];
   estado.confetes = [];
   estado.camera = 0;
+  estado.pontosInicioFase = estado.pontos;
 
   Object.assign(jogador, {
     x: 100, y: CHAO_Y - jogador.altura, vx: 0, vy: 0,
-    noChao: false, olhandoDireita: true, tempoCoyote: 0, bufferPulo: 0,
-    itensColetados: 0, invencivel: 0,
+    noChao: false, sobre: null, olhandoDireita: true,
+    tempoCoyote: 0, bufferPulo: 0, invencivel: 0,
   });
 
-  itens = FASE_1.itens.map(([cx, acima]) => ({
+  // o chão também é uma "plataforma", só que desenhado separado
+  const chao = { x: 0, y: CHAO_Y, largura: fase.largura, altura: ALTURA - CHAO_Y, chao: true };
+  plataformas = [chao].concat(
+    fase.plataformas.map(([x, acima, largura, altura = 32]) => ({
+      x, y: CHAO_Y - acima, largura, altura,
+    }))
+  );
+
+  moveis = fase.moveis.map((m) => ({
+    x: m.x,
+    y: CHAO_Y - m.acima,
+    baseX: m.x,               // ponto central do movimento
+    baseY: CHAO_Y - m.acima,
+    largura: m.largura,
+    altura: ALTURA_MOVEL,
+    eixo: m.eixo,
+    distancia: m.distancia,
+    velocidade: m.velocidade,
+    t: 0,
+    movel: true,
+  }));
+
+  solidos = plataformas.concat(moveis);
+
+  armadilhas = fase.armadilhas.map((a) => ({
+    x: a.x,
+    y: CHAO_Y - (a.acima || 0) - ALTURA_ESPINHO,
+    largura: a.largura,
+    altura: ALTURA_ESPINHO,
+    periodo: a.periodo || 0,  // 0 = sempre para cima
+    ativa: true,
+  }));
+
+  itens = fase.itens.map(([cx, acima]) => ({
     x: cx - TAMANHO_ITEM / 2,
     y: CHAO_Y - acima - TAMANHO_ITEM / 2,
     largura: TAMANHO_ITEM,
@@ -161,8 +137,8 @@ function reiniciarJogo() {
     fase: Math.random() * Math.PI * 2, // para cada nota flutuar num ritmo diferente
   }));
 
-  // "acima" nos dados é a altura onde ficam os pés do Fiscal
-  inimigos = FASE_1.fiscais.map((d) => ({
+  // "acima" é a altura onde ficam os pés do Fiscal
+  inimigos = fase.fiscais.map((d) => ({
     x: d.x,
     y: CHAO_Y - d.acima - FISCAL_ALTURA,
     largura: FISCAL_LARGURA,
@@ -173,7 +149,33 @@ function reiniciarJogo() {
     direcao: 1,
   }));
 }
-reiniciarJogo();
+
+// Começa o jogo do zero, na Fase 1
+function iniciarJogo() {
+  estado.pontos = 0;
+  estado.vidas = VIDAS_INICIAIS;
+  carregarFase(0);
+}
+
+// Depois do game over: repete a mesma fase com vidas cheias
+function tentarDeNovo() {
+  estado.pontos = estado.pontosInicioFase;
+  estado.vidas = VIDAS_INICIAIS;
+  carregarFase(estado.faseAtual);
+}
+
+// Depois da vitória: vai para a próxima fase (ou recomeça se zerou o jogo)
+function proximaFase() {
+  if (estado.faseAtual + 1 < FASES.length) {
+    carregarFase(estado.faseAtual + 1);
+  } else {
+    iniciarJogo();
+  }
+}
+
+function ehUltimaFase() {
+  return estado.faseAtual === FASES.length - 1;
+}
 
 // ---------- Teclado ----------
 // Guarda quais teclas estão pressionadas agora (usando e.code, a tecla física).
@@ -188,14 +190,14 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "Space" && !e.repeat) {
     jogador.bufferPulo = TEMPO_BUFFER_PULO;
   }
-  // nas telas de vitória ou game over, R ou Enter recomeça
-  // (espera a animação da tela aparecer para não recomeçar sem querer)
-  const podeRecomecar =
-    (estado.tela === "gameover" && estado.tempoTela > 0.5) ||
-    (estado.tela === "vitoria" && estado.tempoTela > 1.5);
-  if (podeRecomecar && (e.code === "KeyR" || e.code === "Enter")) {
-    reiniciarJogo();
+
+  // nas telas de vitória ou game over, R ou Enter continua
+  // (espera a animação da tela aparecer para não pular sem querer)
+  if (e.code === "KeyR" || e.code === "Enter") {
+    if (estado.tela === "gameover" && estado.tempoTela > 0.5) tentarDeNovo();
+    else if (estado.tela === "vitoria" && estado.tempoTela > 1.5) proximaFase();
   }
+
   teclas[e.code] = true;
 });
 
@@ -226,13 +228,40 @@ function colide(a, b) {
          a.y < b.y + b.altura && a.y + a.altura > b.y;
 }
 
-// ---------- Lógica do jogador ----------
+// Cria um textinho que sobe e some (ex: "+R$100")
+function criarTexto(texto, x, y, cor) {
+  estado.textos.push({ texto, x, y, cor, vida: 1 });
+}
+
+// =====================================================================
+// LÓGICA
+// =====================================================================
+
+// Plataformas móveis balançam usando seno; quem está em cima vai junto
+function atualizarMoveis(dt) {
+  for (const m of moveis) {
+    m.t += dt;
+    const desloc = Math.sin(m.t * m.velocidade) * m.distancia;
+    const novoX = m.eixo === "x" ? m.baseX + desloc : m.baseX;
+    const novoY = m.eixo === "y" ? m.baseY + desloc : m.baseY;
+    const dx = novoX - m.x;
+    const dy = novoY - m.y;
+    m.x = novoX;
+    m.y = novoY;
+
+    // carrega o jogador junto
+    if (jogador.sobre === m) {
+      jogador.x += dx;
+      jogador.y += dy;
+    }
+  }
+}
 
 function atualizarJogador(dt) {
   const j = jogador;
 
   // 1) Direção escolhida pelo teclado: -1 esquerda, 0 parado, 1 direita
-  //    (depois de vencer, o controle é desligado)
+  //    (fora da tela "jogando", o controle é desligado)
   const controle = estado.tela === "jogando";
   const esquerda = controle && (teclas.ArrowLeft || teclas.KeyA);
   const direita = controle && (teclas.ArrowRight || teclas.KeyD);
@@ -252,6 +281,7 @@ function atualizarJogador(dt) {
     j.bufferPulo = 0;
     j.tempoCoyote = 0;
     j.noChao = false;
+    j.sobre = null;
   }
 
   // 4) Gravidade
@@ -259,23 +289,25 @@ function atualizarJogador(dt) {
 
   // 5) Move no eixo X e resolve colisões laterais
   j.x += j.vx * dt;
-  for (const p of plataformas) {
+  for (const p of solidos) {
     if (!colide(j, p)) continue;
-    if (j.vx > 0) j.x = p.x - j.largura;   // bateu do lado esquerdo do bloco
-    else if (j.vx < 0) j.x = p.x + p.largura; // bateu do lado direito
+    if (j.vx > 0) j.x = p.x - j.largura;        // bateu do lado esquerdo do bloco
+    else if (j.vx < 0) j.x = p.x + p.largura;   // bateu do lado direito
     j.vx = 0;
   }
-  // não deixa sair das bordas do mundo
-  j.x = Math.max(0, Math.min(j.x, MUNDO_LARGURA - j.largura));
+  // não deixa sair das bordas da fase
+  j.x = Math.max(0, Math.min(j.x, fase.largura - j.largura));
 
   // 6) Move no eixo Y e resolve colisões de cima/baixo
   j.y += j.vy * dt;
   j.noChao = false;
-  for (const p of plataformas) {
+  j.sobre = null;
+  for (const p of solidos) {
     if (!colide(j, p)) continue;
     if (j.vy > 0) {
       j.y = p.y - j.altura; // caiu em cima da plataforma
       j.noChao = true;
+      j.sobre = p;
     } else if (j.vy < 0) {
       j.y = p.y + p.altura; // bateu a cabeça embaixo
     }
@@ -283,16 +315,11 @@ function atualizarJogador(dt) {
   }
 }
 
-// A câmera segue o jogador com suavidade, sem sair do mundo
+// A câmera segue o jogador com suavidade, sem sair da fase
 function atualizarCamera(dt) {
   const alvo = jogador.x + jogador.largura / 2 - LARGURA * 0.4;
-  const limitado = Math.max(0, Math.min(alvo, MUNDO_LARGURA - LARGURA));
+  const limitado = Math.max(0, Math.min(alvo, fase.largura - LARGURA));
   estado.camera += (limitado - estado.camera) * Math.min(1, dt * 8);
-}
-
-// Cria um textinho que sobe e some (ex: "+R$100")
-function criarTexto(texto, x, y, cor) {
-  estado.textos.push({ texto, x, y, cor, vida: 1 });
 }
 
 // Encostou numa nota? Ela some e o dinheiro aumenta
@@ -302,15 +329,37 @@ function atualizarItens() {
     const item = itens[i];
     itens.splice(i, 1);
     estado.pontos += VALOR_ITEM;
-    jogador.itensColetados++;
     criarTexto("+R$" + VALOR_ITEM, item.x + item.largura / 2, item.y, "#7CFC00");
   }
 }
 
+// Tira uma vida, empurra o jogador para longe e deixa ele piscando
+function levarDano(origemX) {
+  const j = jogador;
+  estado.vidas--;
+  j.invencivel = TEMPO_INVENCIVEL;
+  criarTexto("-1 vida", j.x + j.largura / 2, j.y, "#ff4d4d");
+
+  const ladoJogador = j.x + j.largura / 2 < origemX ? -1 : 1;
+  j.vx = ladoJogador * 400;
+  j.vy = -550;
+  j.noChao = false;
+  j.sobre = null;
+
+  if (estado.vidas <= 0) {
+    estado.tela = "gameover";
+    estado.tempoTela = 0;
+  }
+}
+
+// Pode levar dano agora? (só jogando e se não estiver piscando)
+function podeLevarDano() {
+  return estado.tela === "jogando" && jogador.invencivel <= 0;
+}
+
 // Fiscais patrulham e tiram uma vida se encostarem no jogador
 function atualizarInimigos(dt) {
-  const j = jogador;
-  j.invencivel = Math.max(0, j.invencivel - dt);
+  jogador.invencivel = Math.max(0, jogador.invencivel - dt);
 
   for (const f of inimigos) {
     // anda e vira ao chegar no limite da patrulha
@@ -318,21 +367,24 @@ function atualizarInimigos(dt) {
     if (f.x < f.min) { f.x = f.min; f.direcao = 1; }
     if (f.x > f.max) { f.x = f.max; f.direcao = -1; }
 
-    // dano (só durante o jogo e se não estiver piscando)
-    if (estado.tela !== "jogando" || j.invencivel > 0 || !colide(j, f)) continue;
-    estado.vidas--;
-    j.invencivel = TEMPO_INVENCIVEL;
-    criarTexto("-1 vida", j.x + j.largura / 2, j.y, "#ff4d4d");
+    if (podeLevarDano() && colide(jogador, f)) {
+      levarDano(f.x + f.largura / 2);
+    }
+  }
+}
 
-    // empurrão para longe do Fiscal
-    const ladoJogador = j.x + j.largura / 2 < f.x + f.largura / 2 ? -1 : 1;
-    j.vx = ladoJogador * 400;
-    j.vy = -450;
-    j.noChao = false;
+// Espinhos: alguns sobem e descem (periodo), os outros estão sempre ativos
+function atualizarArmadilhas() {
+  for (const a of armadilhas) {
+    if (a.periodo > 0) {
+      a.ativa = estado.tempoFase % a.periodo < a.periodo * 0.55;
+    }
+    if (!a.ativa || !podeLevarDano()) continue;
 
-    if (estado.vidas <= 0) {
-      estado.tela = "gameover";
-      estado.tempoTela = 0;
+    // caixa de colisão um pouco menor que o desenho (mais justo para o jogador)
+    const caixa = { x: a.x + 4, y: a.y + 6, largura: a.largura - 8, altura: a.altura - 6 };
+    if (colide(jogador, caixa)) {
+      levarDano(a.x + a.largura / 2);
     }
   }
 }
@@ -340,7 +392,7 @@ function atualizarInimigos(dt) {
 // Chegou no mastro da bandeira? Fase concluída!
 function verificarChegada() {
   if (estado.tela !== "jogando") return;
-  if (jogador.x + jogador.largura < FASE_1.bandeiraX) return;
+  if (jogador.x + jogador.largura < fase.bandeiraX) return;
 
   estado.tela = "vitoria";
   estado.tempoTela = 0;
@@ -380,9 +432,11 @@ function atualizarTextos(dt) {
   estado.textos = estado.textos.filter((t) => t.vida > 0);
 }
 
-// ---------- Elementos do cenário (gerados uma vez) ----------
+// =====================================================================
+// DESENHO DO CENÁRIO (usa as cores do tema da fase)
+// =====================================================================
 
-// Nuvens: posição, tamanho e velocidade própria
+// Elementos gerados uma vez e reaproveitados em todas as fases
 const nuvens = [];
 for (let i = 0; i < 8; i++) {
   nuvens.push({
@@ -392,7 +446,17 @@ for (let i = 0; i < 8; i++) {
   });
 }
 
-// Prédios ao fundo (a "capital" do país fictício)
+const estrelas = [];
+for (let i = 0; i < 80; i++) {
+  estrelas.push({
+    x: Math.random() * LARGURA,
+    y: Math.random() * 300,
+    raio: 0.5 + Math.random() * 1.5,
+    fase: Math.random() * Math.PI * 2,
+  });
+}
+
+// Prédios ao fundo (a cidade do país fictício)
 const predios = [];
 let px = 0;
 while (px < LARGURA * 2) {
@@ -403,43 +467,63 @@ while (px < LARGURA * 2) {
 }
 const LARGURA_CIDADE = px; // usado para repetir os prédios infinitamente
 
-// ---------- Funções de desenho do cenário ----------
-
-// Céu com degradê do azul ao amarelo claro perto do horizonte
-function desenharCeu() {
+// Céu em degradê com 3 cores
+function desenharCeu(cores) {
   const grad = ctx.createLinearGradient(0, 0, 0, ALTURA);
-  grad.addColorStop(0, "#4aa8ff");
-  grad.addColorStop(0.6, "#9fd8ff");
-  grad.addColorStop(1, "#fff2c2");
+  grad.addColorStop(0, cores[0]);
+  grad.addColorStop(0.6, cores[1]);
+  grad.addColorStop(1, cores[2]);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, LARGURA, ALTURA);
 }
 
-// Sol com um brilho que "pulsa" de leve
-function desenharSol() {
+// Estrelas piscando (só nas fases noturnas)
+function desenharEstrelas() {
+  for (const e of estrelas) {
+    ctx.globalAlpha = 0.5 + Math.sin(estado.tempo * 3 + e.fase) * 0.5;
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.raio, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Sol ou lua, com um brilho que "pulsa" de leve
+function desenharAstro(tema) {
   const pulso = Math.sin(estado.tempo * 2) * 4;
   const x = LARGURA - 140;
-  const y = 100;
+  const y = tema.astro === "lua" ? 90 : 100;
 
   // brilho em volta
   const brilho = ctx.createRadialGradient(x, y, 10, x, y, 90 + pulso);
-  brilho.addColorStop(0, "rgba(255, 240, 150, 0.9)");
+  brilho.addColorStop(0, tema.astro === "lua" ? "rgba(255, 255, 230, 0.4)" : "rgba(255, 240, 150, 0.9)");
   brilho.addColorStop(1, "rgba(255, 240, 150, 0)");
   ctx.fillStyle = brilho;
   ctx.beginPath();
   ctx.arc(x, y, 90 + pulso, 0, Math.PI * 2);
   ctx.fill();
 
-  // disco do sol
-  ctx.fillStyle = "#ffe066";
+  // disco
+  ctx.fillStyle = tema.astroCor;
   ctx.beginPath();
-  ctx.arc(x, y, 40, 0, Math.PI * 2);
+  ctx.arc(x, y, tema.astro === "lua" ? 32 : 40, 0, Math.PI * 2);
   ctx.fill();
+
+  // crateras da lua
+  if (tema.astro === "lua") {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.08)";
+    for (const [cx, cy, r] of [[-10, -8, 7], [9, 6, 9], [-6, 12, 4]]) {
+      ctx.beginPath();
+      ctx.arc(x + cx, y + cy, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 }
 
 // Uma nuvem é feita de alguns círculos sobrepostos
-function desenharNuvem(x, y, escala) {
-  ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+function desenharNuvem(x, y, escala, cor) {
+  ctx.fillStyle = cor;
   ctx.beginPath();
   ctx.arc(x, y, 22 * escala, 0, Math.PI * 2);
   ctx.arc(x + 25 * escala, y - 12 * escala, 28 * escala, 0, Math.PI * 2);
@@ -448,13 +532,13 @@ function desenharNuvem(x, y, escala) {
   ctx.fill();
 }
 
-function desenharNuvens() {
+function desenharNuvens(cor) {
   const faixa = LARGURA + 200; // espaço em que as nuvens dão a volta
   for (const n of nuvens) {
     // nuvens andam bem devagar (parallax 0.2) e também sozinhas com o tempo
     let x = n.x - estado.camera * 0.2 - estado.tempo * 10;
     x = ((x % faixa) + faixa) % faixa - 100; // repete na tela
-    desenharNuvem(x, n.y, n.escala);
+    desenharNuvem(x, n.y, n.escala, cor);
   }
 }
 
@@ -475,7 +559,7 @@ function desenharMorros(cor, alturaBase, amplitude, frequencia, parallax) {
 }
 
 // Silhueta da cidade com janelinhas acesas
-function desenharCidade() {
+function desenharCidade(corPredio, corJanela) {
   const deslocamento = (estado.camera * 0.4) % LARGURA_CIDADE;
   for (const p of predios) {
     // desenha cada prédio duas vezes para a cidade nunca acabar
@@ -484,11 +568,10 @@ function desenharCidade() {
       if (x + p.largura < 0 || x > LARGURA) continue;
       const y = CHAO_Y - p.altura;
 
-      ctx.fillStyle = "#5b6c8f";
+      ctx.fillStyle = corPredio;
       ctx.fillRect(x, y, p.largura, p.altura);
 
-      // janelas
-      ctx.fillStyle = "#ffe9a3";
+      ctx.fillStyle = corJanela;
       for (let jy = y + 10; jy < CHAO_Y - 15; jy += 18) {
         for (let jx = x + 8; jx < x + p.largura - 10; jx += 16) {
           ctx.fillRect(jx, jy, 6, 8);
@@ -498,17 +581,15 @@ function desenharCidade() {
   }
 }
 
-// Chão estilo plataforma: grama em cima e blocos de terra embaixo
-function desenharChao() {
+// Chão: faixa no topo (grama, piso ou tapete) e blocos embaixo
+function desenharChao(cores) {
   const tamanhoBloco = 40;
   const deslocamento = estado.camera % tamanhoBloco;
 
-  // terra
-  ctx.fillStyle = "#b5651d";
+  ctx.fillStyle = cores.terra;
   ctx.fillRect(0, CHAO_Y, LARGURA, ALTURA - CHAO_Y);
 
-  // linhas dos blocos
-  ctx.strokeStyle = "#8a4a12";
+  ctx.strokeStyle = cores.linha;
   ctx.lineWidth = 2;
   for (let x = -deslocamento; x < LARGURA; x += tamanhoBloco) {
     for (let y = CHAO_Y + 14; y < ALTURA; y += tamanhoBloco) {
@@ -516,25 +597,28 @@ function desenharChao() {
     }
   }
 
-  // grama
-  ctx.fillStyle = "#4caf50";
+  ctx.fillStyle = cores.topo;
   ctx.fillRect(0, CHAO_Y, LARGURA, 14);
-  ctx.fillStyle = "#2e7d32";
+  ctx.fillStyle = cores.topoEscuro;
   ctx.fillRect(0, CHAO_Y + 12, LARGURA, 4);
 }
 
 // Junta todas as camadas na ordem certa (do fundo para frente)
 function desenharCenario() {
-  desenharCeu();
-  desenharSol();
-  desenharNuvens();
-  desenharMorros("#7fbf7f", CHAO_Y - 90, 40, 0.006, 0.15);
-  desenharCidade();
-  desenharMorros("#4f9a5a", CHAO_Y - 20, 25, 0.012, 0.6);
-  desenharChao();
+  const tema = fase.tema;
+  desenharCeu(tema.ceu);
+  if (tema.estrelas) desenharEstrelas();
+  desenharAstro(tema);
+  desenharNuvens(tema.nuvem);
+  desenharMorros(tema.morroLonge, CHAO_Y - 90, 40, 0.006, 0.15);
+  desenharCidade(tema.predio, tema.janela);
+  desenharMorros(tema.morroPerto, CHAO_Y - 20, 25, 0.012, 0.6);
+  desenharChao(tema.chao);
 }
 
-// ---------- Decoração da Fase 1: placa, Prefeitura e bandeira ----------
+// =====================================================================
+// DECORAÇÃO: placa do começo e prédio do fim de cada fase
+// =====================================================================
 
 // Placa verde de estrada no começo da fase
 function desenharPlaca() {
@@ -553,26 +637,43 @@ function desenharPlaca() {
   ctx.fillStyle = "#fff";
   ctx.textAlign = "center";
   ctx.font = "bold 14px 'Trebuchet MS', Arial";
-  ctx.fillText("PREFEITURA →", x + 65, CHAO_Y - 92);
+  ctx.fillText(fase.placa, x + 65, CHAO_Y - 92);
   ctx.font = "11px 'Trebuchet MS', Arial";
-  ctx.fillText("Fase 1 · 3,5 km", x + 65, CHAO_Y - 76);
+  ctx.fillText(`Fase ${fase.numero}`, x + 65, CHAO_Y - 76);
   ctx.textAlign = "left";
 }
 
-// Prédio da Prefeitura no fim da fase (só decoração, não colide)
-function desenharPrefeitura() {
+// Escolhe qual prédio desenhar no fim da fase (só decoração, não colide)
+function desenharPredioFinal() {
+  const x = Math.round(fase.predioX - estado.camera);
+  if (x + 400 < 0 || x - 60 > LARGURA) return;
+  if (fase.predio === "prefeitura") desenharPrefeitura(x);
+  if (fase.predio === "shopping") desenharShopping(x);
+  if (fase.predio === "palacio") desenharPalacio(x);
+}
+
+// Faixa com o nome em cima de um prédio
+function faixaComNome(x, y, largura, texto, corFundo, corTexto) {
+  ctx.fillStyle = corFundo;
+  ctx.fillRect(x, y, largura, 24);
+  ctx.fillStyle = corTexto;
+  ctx.font = "bold 16px 'Trebuchet MS', Arial";
+  ctx.textAlign = "center";
+  ctx.fillText(texto, x + largura / 2, y + 18);
+  ctx.textAlign = "left";
+}
+
+// Fase 1: Prefeitura com colunas, frontão e relógio
+function desenharPrefeitura(x) {
   const w = 300;
   const h = 200;
-  const x = Math.round(FASE_1.prefeituraX - estado.camera);
-  if (x + w + 30 < 0 || x - 30 > LARGURA) return;
   const topo = CHAO_Y - h;
 
   // mastro no telhado com bandeirinha azul da cidade fictícia
   ctx.fillStyle = "#999";
   ctx.fillRect(x + w / 2 - 2, topo - 140, 4, 70);
   ctx.fillStyle = "#2f6fd6";
-  const onda = Math.sin(estado.tempo * 5) * 2;
-  ctx.fillRect(x + w / 2 + 2, topo - 140 + onda, 34, 20);
+  ctx.fillRect(x + w / 2 + 2, topo - 140 + Math.sin(estado.tempo * 5) * 2, 34, 20);
 
   // paredes
   ctx.fillStyle = "#efe3c8";
@@ -608,14 +709,7 @@ function desenharPrefeitura() {
     ctx.stroke();
   }
 
-  // faixa com o nome
-  ctx.fillStyle = "#8b6b3e";
-  ctx.fillRect(x + 50, topo + 10, w - 100, 24);
-  ctx.fillStyle = "#fff";
-  ctx.font = "bold 16px 'Trebuchet MS', Arial";
-  ctx.textAlign = "center";
-  ctx.fillText("PREFEITURA", x + w / 2, topo + 28);
-  ctx.textAlign = "left";
+  faixaComNome(x + 50, topo + 10, w - 100, "PREFEITURA", "#8b6b3e", "#fff");
 
   // colunas (duas de cada lado da porta)
   for (const cx of [30, 80, 204, 254]) {
@@ -644,9 +738,114 @@ function desenharPrefeitura() {
   ctx.fillRect(x - 20, CHAO_Y - 10, w + 40, 10);
 }
 
+// Fase 2: Shopping de vidro com letreiro neon piscando
+function desenharShopping(x) {
+  const w = 320;
+  const h = 180;
+  const topo = CHAO_Y - h;
+
+  // corpo
+  ctx.fillStyle = "#e0e0e8";
+  ctx.fillRect(x, topo, w, h);
+
+  // vidraças
+  for (let lin = 0; lin < 3; lin++) {
+    for (let col = 0; col < 8; col++) {
+      ctx.fillStyle = (lin + col) % 2 === 0 ? "#7fd3e6" : "#a8e6f2";
+      ctx.fillRect(x + 12 + col * 37, topo + 50 + lin * 30, 33, 26);
+    }
+  }
+
+  // porta de vidro automática
+  ctx.fillStyle = "#bdefff";
+  ctx.fillRect(x + w / 2 - 40, CHAO_Y - 40, 80, 40);
+  ctx.fillStyle = "#5c6b73";
+  ctx.fillRect(x + w / 2 - 1, CHAO_Y - 40, 2, 40);
+
+  // letreiro neon
+  const brilho = 0.7 + 0.3 * Math.sin(estado.tempo * 6);
+  ctx.fillStyle = "#4a148c";
+  ctx.fillRect(x + 40, topo - 40, w - 80, 44);
+  ctx.fillStyle = `rgba(255, 105, 180, ${brilho})`;
+  ctx.font = "bold 28px 'Trebuchet MS', Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("SHOPPING", x + w / 2, topo - 8);
+  ctx.textAlign = "left";
+
+  // toldo listrado em cima da porta
+  for (let i = 0; i < 6; i++) {
+    ctx.fillStyle = i % 2 === 0 ? "#ff6b6b" : "#ffffff";
+    ctx.fillRect(x + w / 2 - 60 + i * 20, CHAO_Y - 54, 20, 12);
+  }
+}
+
+// Fase 3: Palácio com torres, cúpula dourada e tapete vermelho
+function desenharPalacio(x) {
+  const w = 340;
+  const h = 160;
+  const topo = CHAO_Y - h;
+
+  // torres laterais com telhado cônico dourado
+  for (const tx of [x - 10, x + w - 40]) {
+    ctx.fillStyle = "#f3ead2";
+    ctx.fillRect(tx, topo - 60, 50, h + 60);
+    ctx.fillStyle = "#d4af37";
+    ctx.beginPath();
+    ctx.moveTo(tx - 5, topo - 60);
+    ctx.lineTo(tx + 25, topo - 115);
+    ctx.lineTo(tx + 55, topo - 60);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#ffd86b"; // janela acesa
+    ctx.fillRect(tx + 18, topo - 35, 14, 22);
+  }
+
+  // corpo principal
+  ctx.fillStyle = "#f8f1dc";
+  ctx.fillRect(x + 40, topo, w - 80, h);
+
+  // cúpula dourada com ponta
+  ctx.fillStyle = "#d4af37";
+  ctx.beginPath();
+  ctx.arc(x + w / 2, topo, 60, Math.PI, 0);
+  ctx.fill();
+  ctx.fillRect(x + w / 2 - 2, topo - 82, 4, 22);
+  ctx.beginPath();
+  ctx.arc(x + w / 2, topo - 84, 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  faixaComNome(x + 100, topo + 14, w - 200, "PALÁCIO", "#7b1e1e", "#ffd700");
+
+  // colunas
+  for (const cx of [60, 95, 231, 266]) {
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(x + cx, topo + 50, 14, h - 70);
+    ctx.fillStyle = "#e2d7bd";
+    ctx.fillRect(x + cx + 10, topo + 50, 4, h - 70);
+  }
+
+  // porta dourada com arco
+  ctx.fillStyle = "#b8860b";
+  ctx.beginPath();
+  ctx.moveTo(x + w / 2 - 25, CHAO_Y - 20);
+  ctx.lineTo(x + w / 2 - 25, CHAO_Y - 70);
+  ctx.arc(x + w / 2, CHAO_Y - 70, 25, Math.PI, 0);
+  ctx.lineTo(x + w / 2 + 25, CHAO_Y - 20);
+  ctx.closePath();
+  ctx.fill();
+
+  // escadaria de mármore com tapete vermelho
+  ctx.fillStyle = "#e8e4da";
+  ctx.fillRect(x - 10, CHAO_Y - 20, w + 20, 10);
+  ctx.fillStyle = "#d6d0c2";
+  ctx.fillRect(x - 20, CHAO_Y - 10, w + 40, 10);
+  ctx.fillStyle = "#c62828";
+  ctx.fillRect(x + w / 2 - 22, CHAO_Y - 20, 44, 20);
+}
+
 // Mastro de chegada com bandeira quadriculada (desce quando você vence)
 function desenharBandeira() {
-  const x = Math.round(FASE_1.bandeiraX - estado.camera);
+  const x = Math.round(fase.bandeiraX - estado.camera);
   if (x < -100 || x > LARGURA + 100) return;
   const altura = 280;
   const topo = CHAO_Y - altura;
@@ -679,40 +878,101 @@ function desenharBandeira() {
   }
 }
 
-// ---------- Desenho das plataformas e do personagem ----------
+// =====================================================================
+// DESENHO DE PLATAFORMAS, ARMADILHAS, ITENS, INIMIGOS E JOGADOR
+// =====================================================================
 
-// Plataformas de tijolinhos
+// Um bloco de tijolinhos nas cores do tema
+function desenharBloco(x, y, largura, altura, cores) {
+  ctx.fillStyle = cores.fundo;
+  ctx.fillRect(x, y, largura, altura);
+
+  // tijolos (linhas alternadas deslocadas), recortados dentro do bloco
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, largura, altura);
+  ctx.clip();
+  ctx.strokeStyle = cores.linha;
+  ctx.lineWidth = 2;
+  for (let by = 0; by < altura; by += 16) {
+    const desloc = (by / 16) % 2 === 0 ? 0 : 16;
+    for (let bx = -desloc; bx < largura; bx += 32) {
+      ctx.strokeRect(x + bx + 1, y + by + 1, 30, 14);
+    }
+  }
+  ctx.restore();
+
+  // brilho no topo e contorno
+  ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
+  ctx.fillRect(x, y, largura, 3);
+  ctx.strokeStyle = cores.contorno;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, y + 1, largura - 2, altura - 2);
+}
+
 function desenharPlataformas() {
   for (const p of plataformas) {
     if (p.chao) continue; // o chão já foi desenhado no cenário
     const x = Math.round(p.x - estado.camera);
     if (x + p.largura < 0 || x > LARGURA) continue; // fora da tela
+    desenharBloco(x, p.y, p.largura, p.altura, fase.tema.bloco);
+  }
+}
 
-    // fundo do bloco
-    ctx.fillStyle = "#c8642a";
-    ctx.fillRect(x, p.y, p.largura, p.altura);
+// Plataformas móveis: bloco com faixa amarela e preta de "atenção"
+function desenharMoveis() {
+  for (const m of moveis) {
+    const x = Math.round(m.x - estado.camera);
+    if (x + m.largura < 0 || x > LARGURA) continue;
+    const y = Math.round(m.y);
+    desenharBloco(x, y, m.largura, m.altura, fase.tema.bloco);
 
-    // tijolos (linhas alternadas deslocadas), recortados dentro do bloco
     ctx.save();
     ctx.beginPath();
-    ctx.rect(x, p.y, p.largura, p.altura);
+    ctx.rect(x, y + m.altura - 7, m.largura, 7);
     ctx.clip();
-    ctx.strokeStyle = "#7a3512";
-    ctx.lineWidth = 2;
-    for (let by = 0; by < p.altura; by += 16) {
-      const desloc = (by / 16) % 2 === 0 ? 0 : 16;
-      for (let bx = -desloc; bx < p.largura; bx += 32) {
-        ctx.strokeRect(x + bx + 1, p.y + by + 1, 30, 14);
-      }
+    for (let i = -1; i < m.largura / 10 + 1; i++) {
+      ctx.fillStyle = i % 2 === 0 ? "#ffd700" : "#222";
+      ctx.beginPath();
+      ctx.moveTo(x + i * 10, y + m.altura);
+      ctx.lineTo(x + i * 10 + 7, y + m.altura - 7);
+      ctx.lineTo(x + i * 10 + 17, y + m.altura - 7);
+      ctx.lineTo(x + i * 10 + 10, y + m.altura);
+      ctx.closePath();
+      ctx.fill();
     }
     ctx.restore();
+  }
+}
 
-    // brilho no topo e contorno
-    ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
-    ctx.fillRect(x, p.y, p.largura, 3);
-    ctx.strokeStyle = "#4a1f08";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x + 1, p.y + 1, p.largura - 2, p.altura - 2);
+// Espinhos metálicos (recolhidos aparecem só como pontinhas)
+function desenharArmadilhas() {
+  for (const a of armadilhas) {
+    const x = Math.round(a.x - estado.camera);
+    if (x + a.largura < 0 || x > LARGURA) continue;
+    const base = a.y + a.altura;
+    const alturaPonta = a.ativa ? a.altura : 5;
+
+    // base escura
+    ctx.fillStyle = "#37474f";
+    ctx.fillRect(x, base - 4, a.largura, 4);
+
+    // triângulos
+    const quantidade = Math.max(1, Math.round(a.largura / 16));
+    const larguraPonta = a.largura / quantidade;
+    ctx.fillStyle = a.ativa ? "#cfd8dc" : "#90a4ae";
+    ctx.strokeStyle = "#455a64";
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < quantidade; i++) {
+      const px = x + i * larguraPonta;
+      ctx.beginPath();
+      ctx.moveTo(px, base - 3);
+      ctx.lineTo(px + larguraPonta / 2, base - alturaPonta);
+      ctx.lineTo(px + larguraPonta, base - 3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
   }
 }
 
@@ -801,9 +1061,10 @@ function desenharInimigos() {
   }
 }
 
-// Saco de dinheiro nas costas: cresce conforme os itens coletados
+// Saco de dinheiro nas costas: cresce conforme o dinheiro acumulado
 function desenharSaco(x, y, w, olhandoDireita) {
-  const raio = 9 + Math.min(jogador.itensColetados, 24) * 0.6;
+  const notas = estado.pontos / VALOR_ITEM;
+  const raio = 9 + Math.min(notas, 40) * 0.4;
   const cx = olhandoDireita ? x - raio * 0.4 : x + w + raio * 0.4;
   const cy = y + 34 - raio * 0.3;
 
@@ -907,6 +1168,10 @@ function desenharJogador() {
   ctx.textAlign = "left";
 }
 
+// =====================================================================
+// HUD E TELAS
+// =====================================================================
+
 // Textos flutuantes ("+R$100", "-1 vida")
 function desenharTextos() {
   ctx.font = "bold 16px 'Trebuchet MS', Arial";
@@ -923,7 +1188,7 @@ function desenharTextos() {
   ctx.textAlign = "left";
 }
 
-// Painel com dinheiro, itens restantes e vidas
+// Painel com dinheiro, notas, vidas e nome da fase
 function desenharHUD() {
   ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
   ctx.fillRect(16, 16, 260, 70);
@@ -934,7 +1199,7 @@ function desenharHUD() {
 
   ctx.font = "14px 'Trebuchet MS', Arial";
   ctx.fillStyle = "#fff";
-  const total = FASE_1.itens.length;
+  const total = fase.itens.length;
   ctx.fillText(`Notas: ${total - itens.length}/${total}`, 28, 70);
 
   // corações das vidas
@@ -946,28 +1211,27 @@ function desenharHUD() {
 
   // nome da fase no canto direito
   ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
-  ctx.fillRect(LARGURA - 216, 16, 200, 34);
+  ctx.fillRect(LARGURA - 236, 16, 220, 34);
   ctx.fillStyle = "#fff";
   ctx.font = "bold 16px 'Trebuchet MS', Arial";
   ctx.textAlign = "right";
-  ctx.fillText(`Fase ${FASE_1.numero} — ${FASE_1.nome}`, LARGURA - 28, 39);
+  ctx.fillText(`Fase ${fase.numero}/${FASES.length} — ${fase.nome}`, LARGURA - 28, 39);
   ctx.textAlign = "left";
 }
 
-// Faixa "FASE 1 — PREFEITURA" que aparece no começo e some sozinha
+// Faixa "FASE N — NOME" que aparece no começo e some sozinha
 function desenharBannerFase() {
   if (estado.tempoFase > 3) return;
-  const alpha = Math.min(1, 3 - estado.tempoFase); // some no último segundo
-  ctx.globalAlpha = alpha;
+  ctx.globalAlpha = Math.min(1, 3 - estado.tempoFase); // some no último segundo
   ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
   ctx.fillRect(0, ALTURA / 2 - 70, LARGURA, 110);
   ctx.textAlign = "center";
   ctx.fillStyle = "#ffd700";
   ctx.font = "bold 44px 'Trebuchet MS', Arial";
-  ctx.fillText(`FASE ${FASE_1.numero}`, LARGURA / 2, ALTURA / 2 - 20);
+  ctx.fillText(`FASE ${fase.numero}`, LARGURA / 2, ALTURA / 2 - 20);
   ctx.fillStyle = "#fff";
   ctx.font = "22px 'Trebuchet MS', Arial";
-  ctx.fillText(`${FASE_1.nome.toUpperCase()} — chegue até a bandeira!`, LARGURA / 2, ALTURA / 2 + 18);
+  ctx.fillText(`${fase.nome.toUpperCase()} — chegue até a bandeira!`, LARGURA / 2, ALTURA / 2 + 18);
   ctx.textAlign = "left";
   ctx.globalAlpha = 1;
 }
@@ -985,20 +1249,19 @@ function textoCentral(texto, y, tamanho, cor) {
 
 // Tela de GAME OVER (perdeu todas as vidas)
 function desenharGameOver() {
-  const alpha = Math.min(1, estado.tempoTela / 0.5); // aparece aos poucos
-  ctx.globalAlpha = alpha;
+  ctx.globalAlpha = Math.min(1, estado.tempoTela / 0.5); // aparece aos poucos
   ctx.fillStyle = "rgba(20, 0, 0, 0.75)";
   ctx.fillRect(0, 0, LARGURA, ALTURA);
   textoCentral("GAME OVER", ALTURA / 2 - 40, 64, "#ff4d4d");
-  textoCentral("Os Fiscais pegaram você!", ALTURA / 2 + 5, 24, "#fff");
+  textoCentral(`Você caiu na Fase ${fase.numero} — ${fase.nome}`, ALTURA / 2 + 5, 24, "#fff");
   textoCentral("Dinheiro: R$ " + estado.pontos.toLocaleString("pt-BR"), ALTURA / 2 + 40, 20, "#7CFC00");
   if (estado.tempoTela > 0.5 && Math.floor(estado.tempo * 2) % 2 === 0) {
-    textoCentral("Aperte R ou Enter para tentar de novo", ALTURA / 2 + 90, 18, "#fff");
+    textoCentral("Aperte R ou Enter para tentar esta fase de novo", ALTURA / 2 + 90, 18, "#fff");
   }
   ctx.globalAlpha = 1;
 }
 
-// Tela de FASE CONCLUÍDA (encostou na bandeira)
+// Tela de FASE CONCLUÍDA (ou de jogo zerado, na última fase)
 function desenharVitoria() {
   // confetes caindo
   for (const c of estado.confetes) {
@@ -1011,23 +1274,27 @@ function desenharVitoria() {
   if (alpha === 0) return;
   ctx.globalAlpha = alpha;
   ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-  ctx.fillRect(LARGURA / 2 - 280, ALTURA / 2 - 120, 560, 230);
+  ctx.fillRect(LARGURA / 2 - 290, ALTURA / 2 - 120, 580, 230);
   ctx.strokeStyle = "#ffd700";
   ctx.lineWidth = 3;
-  ctx.strokeRect(LARGURA / 2 - 280, ALTURA / 2 - 120, 560, 230);
+  ctx.strokeRect(LARGURA / 2 - 290, ALTURA / 2 - 120, 580, 230);
 
-  const total = FASE_1.itens.length;
-  textoCentral("Fase concluída!", ALTURA / 2 - 55, 54, "#ffd700");
-  textoCentral(`Fase ${FASE_1.numero} — ${FASE_1.nome}`, ALTURA / 2 - 15, 20, "#fff");
+  const total = fase.itens.length;
+  const fim = ehUltimaFase();
+  textoCentral(fim ? "Você zerou o jogo!" : "Fase concluída!", ALTURA / 2 - 55, 52, "#ffd700");
+  textoCentral(`Fase ${fase.numero} — ${fase.nome}`, ALTURA / 2 - 15, 20, "#fff");
   textoCentral("Dinheiro: R$ " + estado.pontos.toLocaleString("pt-BR"), ALTURA / 2 + 20, 22, "#7CFC00");
   textoCentral(`Notas: ${total - itens.length}/${total}   ·   Vidas: ${estado.vidas}`, ALTURA / 2 + 50, 18, "#fff");
   if (estado.tempoTela > 1.5 && Math.floor(estado.tempo * 2) % 2 === 0) {
-    textoCentral("Aperte R ou Enter para jogar de novo", ALTURA / 2 + 88, 16, "#ddd");
+    const proxima = fim ? "Aperte Enter para jogar de novo" : "Aperte Enter para a próxima fase";
+    textoCentral(proxima, ALTURA / 2 + 88, 16, "#ddd");
   }
   ctx.globalAlpha = 1;
 }
 
-// ---------- Loop principal ----------
+// =====================================================================
+// LOOP PRINCIPAL
+// =====================================================================
 
 // Atualiza a lógica do jogo. "dt" é o tempo desde o último quadro (segundos),
 // assim o jogo roda na mesma velocidade em qualquer monitor (60Hz, 144Hz...).
@@ -1051,12 +1318,14 @@ function atualizar(dt) {
   let restante = dt;
   while (restante > 0) {
     const passo = Math.min(restante, 1 / 120);
+    atualizarMoveis(passo);
     atualizarJogador(passo);
     restante -= passo;
   }
 
   atualizarItens();
   atualizarInimigos(dt);
+  atualizarArmadilhas();
   verificarChegada();
   atualizarCamera(dt);
 }
@@ -1064,9 +1333,11 @@ function atualizar(dt) {
 function desenhar() {
   desenharCenario();
   desenharPlaca();
-  desenharPrefeitura();
+  desenharPredioFinal();
   desenharBandeira();
   desenharPlataformas();
+  desenharMoveis();
+  desenharArmadilhas();
   desenharItens();
   desenharInimigos();
   desenharJogador();
@@ -1090,4 +1361,5 @@ function loop(agora) {
   requestAnimationFrame(loop);
 }
 
+iniciarJogo();
 requestAnimationFrame(loop);

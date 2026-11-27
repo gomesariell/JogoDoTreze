@@ -19,18 +19,27 @@ Não precisa instalar nada.
 |---|---|
 | ← → ou A / D | Andar |
 | Espaço | Pular (segure para pular mais alto) |
-| R ou Enter | Recomeçar (nas telas de vitória ou game over) |
+| Enter ou R | Próxima fase (na vitória) / tentar de novo (no game over) |
 
 ### Objetivo
 
-**Fase 1 — Prefeitura:** atravesse a cidade até a Prefeitura e encoste no **mastro da bandeira de chegada**. No caminho, colete as notas de dinheiro (cada uma vale R$ 100) e fuja dos **Fiscais**. Você tem 3 vidas: cada vez que encosta num Fiscal perde uma, é empurrado para trás e fica alguns instantes piscando (invencível). Sem vidas, é **GAME OVER**. Chegando na bandeira, aparece **"Fase concluída!"** com o resumo da fase.
+Atravesse cada fase até o **mastro da bandeira de chegada**. No caminho, colete as notas de dinheiro (R$ 100 cada) e fuja dos **Fiscais** e dos **espinhos**. Você tem 3 vidas: cada dano tira uma, empurra o personagem para trás e o deixa piscando (invencível) por 1,5 s. Sem vidas é **GAME OVER** e você tenta a mesma fase de novo. Chegando na bandeira aparece **"Fase concluída!"** e o Enter leva para a próxima. Vencendo a Fase 3, você zera o jogo.
+
+### Fases
+
+| Fase | Tema e cores | Desafio |
+|---|---|---|
+| 1 — Prefeitura | Dia ensolarado, tijolinhos, grama | Plataformas básicas e 4 Fiscais |
+| 2 — Shopping | Pôr do sol, vidro azul e neon, piso de cerâmica | Plataformas bem altas e 8 Fiscais (alguns lá em cima) |
+| 3 — Palácio | Noite estrelada com lua, mármore e tapete vermelho | Plataformas móveis (horizontais e elevador) sobre campos de espinhos, e espinhos que sobem e descem |
 
 ## Estrutura do projeto
 
 ```
-├── index.html   # Página que contém o <canvas> do jogo
+├── index.html   # Página que contém o <canvas> e carrega os scripts
 ├── style.css    # Estilo da página (centraliza e emoldura o canvas)
-├── game.js      # Toda a lógica: loop do jogo, cenário, personagem...
+├── fases.js     # DADOS das fases: cores do tema, plataformas, itens, inimigos...
+├── game.js      # LÓGICA e DESENHO: loop, física, colisão, telas (serve para qualquer fase)
 ├── README.md    # Este arquivo
 └── CLAUDE.md    # Regras do projeto usadas pela IA durante o desenvolvimento
 ```
@@ -38,27 +47,37 @@ Não precisa instalar nada.
 ## Como funciona
 
 - **Loop do jogo:** usa `requestAnimationFrame`. A cada quadro o jogo chama `atualizar(dt)` (lógica) e `desenhar()` (tela). O `dt` é o tempo entre quadros, então a velocidade é a mesma em qualquer monitor.
-- **Cenário com parallax:** céu em degradê, sol, nuvens, morros, cidade e chão. Cada camada se move numa velocidade diferente em relação à câmera, criando sensação de profundidade.
-- **Personagem (Nine):** desenhado com formas do canvas — corpo retangular vermelho, rosto, barba branca e pernas que balançam ao andar.
-- **Física:** a cada passo o jogo aplica aceleração horizontal, gravidade e o pulo. Inclui *coyote time* (dá para pular logo após sair da beirada), *buffer* de pulo (apertar espaço um pouco antes de tocar o chão também vale) e pulo variável (soltar o espaço cedo faz um pulo mais baixo).
-- **Colisão:** jogador e plataformas são retângulos (AABB). O movimento é resolvido primeiro no eixo X (paredes) e depois no eixo Y (chão e teto). O quadro é dividido em passos pequenos para nunca atravessar plataformas finas.
-- **Câmera:** segue o jogador suavemente pela fase (4000 px de largura).
-- **Fase 1 — Prefeitura:** todos os dados da fase (plataformas, notas, Fiscais, posição da bandeira e do prédio) ficam num único objeto `FASE_1` no `game.js`. As posições são dadas em "pixels acima do chão", então é fácil editar ou criar novas fases. A fase começa com uma faixa "FASE 1 — PREFEITURA" e uma placa de estrada, passa por plataformas e uma escadaria, e termina no prédio da Prefeitura (colunas, frontão, relógio e bandeira da cidade fictícia).
-- **Telas do jogo:** a variável `estado.tela` controla em que momento o jogo está: `"jogando"`, `"vitoria"` ou `"gameover"`.
-  - **Vitória:** encostar no mastro desliga o controle, a bandeira quadriculada desce, caem confetes e aparece o painel "Fase concluída!" com dinheiro, notas e vidas.
-  - **Game over:** ao perder a última vida o jogo congela e aparece a tela "GAME OVER".
-  - Nas duas telas, R ou Enter chama `reiniciarJogo()`, que volta tudo ao estado inicial.
-- **Itens de dinheiro:** 28 notas flutuando sobre as plataformas e o chão. Quando o retângulo do jogador encosta numa nota, ela é removida da lista, a pontuação sobe R$ 100 e aparece um "+R$100" flutuante. O **saco de dinheiro** nas costas do personagem cresce a cada nota coletada.
-- **Inimigos (Fiscais):** 4 Fiscais patrulham de um lado para o outro entre dois limites (três no chão e um em cima de uma plataforma). Encostar neles tira uma vida e dá 1,5 s de invencibilidade.
-- **HUD:** mostra o dinheiro (R$), quantas notas foram coletadas, os corações de vida e o nome da fase.
+- **Sistema de fases:** o arquivo `fases.js` tem o array `FASES`, um objeto por fase, só com dados:
+  - `tema`: cores do céu, do sol ou da lua, das estrelas, das nuvens, dos morros, dos prédios, do chão e dos blocos;
+  - arrays de `plataformas`, `moveis`, `armadilhas`, `itens` e `fiscais`;
+  - posição da bandeira e qual prédio aparece no fim (`prefeitura`, `shopping` ou `palacio`).
+
+  As posições são dadas em "pixels acima do chão", por exemplo `[x, acima, largura]`. A função `carregarFase(indice)` do `game.js` converte esses dados em retângulos que a física entende. **Para criar uma fase nova basta adicionar um objeto ao array**, sem mexer na lógica.
+- **Cenário com parallax e tema:** céu em degradê, sol ou lua (com estrelas piscando à noite), nuvens, morros, cidade e chão. Cada camada se move numa velocidade diferente em relação à câmera, criando profundidade, e todas usam as cores do tema da fase.
+- **Personagem (Nine):** desenhado com formas do canvas: corpo retangular vermelho, rosto, barba branca, pernas que balançam ao andar e um **saco de dinheiro** nas costas que cresce conforme o dinheiro acumulado.
+- **Física:** aceleração horizontal, gravidade e pulo. Para o controle ficar mais justo, há três ajudas:
+  - *coyote time*: dá para pular logo depois de sair da beirada;
+  - *buffer* de pulo: apertar o Espaço um pouco antes de tocar o chão também vale;
+  - pulo variável: soltar o Espaço cedo faz um pulo mais baixo.
+- **Colisão:** tudo é retângulo (AABB). O movimento é resolvido primeiro no eixo X (paredes) e depois no eixo Y (chão e teto), em passos pequenos para nunca atravessar plataformas finas.
+- **Plataformas móveis:** a posição segue uma onda de seno (`base + sin(t * velocidade) * distancia`), no eixo X ou Y. O jogador guarda em `jogador.sobre` a plataforma em que está pisando e é deslocado junto com ela a cada passo.
+- **Armadilhas (espinhos):** encostar tira uma vida. As que têm `periodo` sobem e descem: ficam ativas em cerca de metade do ciclo.
+- **Itens de dinheiro:** ao encostar, a nota sai da lista, a pontuação sobe R$ 100 e aparece um "+R$100" flutuante.
+- **Inimigos (Fiscais):** patrulham de um lado para o outro entre `min` e `max`, no chão ou em cima de plataformas.
+- **Telas:** `estado.tela` controla o momento do jogo.
+  - `"jogando"`: o jogo normal.
+  - `"vitoria"`: a bandeira desce, caem confetes e aparece "Fase concluída!" (ou "Você zerou o jogo!" na última fase).
+  - `"gameover"`: aparece a tela de GAME OVER. O dinheiro volta ao valor do início da fase e as vidas são recarregadas.
+- **HUD:** dinheiro (R$), notas coletadas na fase, corações de vida e "Fase N/3 — Nome". No começo de cada fase aparece uma faixa com o nome dela.
 
 ## Progresso
 
 - [x] Etapa 1 — Canvas, loop do jogo e cenário de fundo
 - [x] Etapa 2 — Personagem andando e pulando, com gravidade e colisão com chão e plataformas
-- [x] Etapa 4 — Itens de dinheiro, pontuação, inimigos (Fiscais) e vidas
-- [x] Etapa 5 — Fase 1 "Prefeitura" com bandeira de chegada, tela de "Fase concluída!" e GAME OVER
-- [ ] Etapa 6 — Menu inicial e novas fases
+- [x] Etapa 3 — Itens de dinheiro, pontuação, inimigos (Fiscais) e vidas
+- [x] Etapa 4 — Fase 1 "Prefeitura" com bandeira de chegada, tela de "Fase concluída!" e GAME OVER
+- [x] Etapa 5 — Sistema de fases em dados (`fases.js`): Fase 2 "Shopping" e Fase 3 "Palácio" com plataformas móveis e armadilhas
+- [ ] Etapa 6 — Menu inicial, sons e ajustes finais
 
 ## Desenvolvimento
 
