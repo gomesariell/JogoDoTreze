@@ -23,7 +23,9 @@ Não precisa instalar nada.
 
 ### Objetivo
 
-Atravesse cada fase até o **mastro da bandeira de chegada**. No caminho, colete as notas de dinheiro (R$ 100 cada) e fuja dos **Fiscais** e dos **espinhos**. Você tem 3 vidas: cada dano tira uma, empurra o personagem para trás e o deixa piscando (invencível) por 1,5 s. Sem vidas é **GAME OVER** e você tenta a mesma fase de novo. Chegando na bandeira aparece **"Fase concluída!"** e o Enter leva para a próxima. Vencendo a Fase 3, você zera o jogo.
+Atravesse cada fase até o **mastro da bandeira de chegada**. No caminho, colete as notas de dinheiro (R$ 100 cada) e fuja dos **Fiscais** e dos **espinhos**. Você tem 3 vidas: cada dano tira uma, empurra o personagem para trás e o deixa piscando (invencível) por 1,5 s. Sem vidas é **GAME OVER** e você tenta a mesma fase de novo. Chegando na bandeira aparece **"Fase concluída!"** e o Enter leva para a próxima.
+
+No fim da Fase 3 não há bandeira: em frente ao Palácio espera o chefão **Doutor Burocracia**. Desvie dos **processos** (papéis) que ele arremessa e **pule na cabeça dele 5 vezes** para vencer o jogo e ver a tela final de vitória.
 
 ### Fases
 
@@ -31,7 +33,7 @@ Atravesse cada fase até o **mastro da bandeira de chegada**. No caminho, colete
 |---|---|---|
 | 1 — Prefeitura | Dia ensolarado, tijolinhos, grama | Plataformas básicas e 4 Fiscais |
 | 2 — Shopping | Pôr do sol, vidro azul e neon, piso de cerâmica | Plataformas bem altas e 8 Fiscais (alguns lá em cima) |
-| 3 — Palácio | Noite estrelada com lua, mármore e tapete vermelho | Plataformas móveis (horizontais e elevador) sobre campos de espinhos, e espinhos que sobem e descem |
+| 3 — Palácio | Noite estrelada com lua, mármore e tapete vermelho | Plataformas móveis (horizontais e elevador) sobre campos de espinhos, espinhos que sobem e descem e o **chefão Doutor Burocracia** |
 
 ## Estrutura do projeto
 
@@ -64,9 +66,17 @@ Atravesse cada fase até o **mastro da bandeira de chegada**. No caminho, colete
 - **Armadilhas (espinhos):** encostar tira uma vida. As que têm `periodo` sobem e descem: ficam ativas em cerca de metade do ciclo.
 - **Itens de dinheiro:** ao encostar, a nota sai da lista, a pontuação sobe R$ 100 e aparece um "+R$100" flutuante.
 - **Inimigos (Fiscais):** patrulham de um lado para o outro entre `min` e `max`, no chão ou em cima de plataformas.
+- **Chefão (Doutor Burocracia):** personagem fictício de terno cinza, cartola, óculos redondos, bigodão e um carimbo gigante. Ele é definido nos dados da fase (`chefao` em `fases.js`) e controlado por uma pequena **máquina de estados**:
+  1. `esperando`: até o jogador passar de `arenaX`. Aí a câmera trava mostrando a arena, o jogador não pode mais voltar e é salvo um **checkpoint** (no game over você recomeça na porta da arena).
+  2. `apresentando`: faixa "⚠ CHEFÃO" e barra de vida com 5 segmentos no topo da tela.
+  3. `andando` ⇄ `preparando`: ele anda de um lado para o outro e, de tempos em tempos, levanta o carimbo e lança de 2 a 4 **processos**. São papéis que voam em arco com gravidade, mirando onde o jogador está, e tiram uma vida se encostarem.
+  4. `atordoado`: depois de um pisão ele pisca por 1 s com estrelinhas girando e não causa dano.
+  5. `derrotado`: com a vida em zero, ele tomba e a fase termina.
+
+  O **pisão** vale quando o jogador está caindo e os pés estão na parte de cima do chefão: ele perde 1 de vida e o jogador quica para cima. Encostar de lado tira uma vida do jogador. A cada pisão o chefão fica mais rápido e lança mais papéis.
 - **Telas:** `estado.tela` controla o momento do jogo.
   - `"jogando"`: o jogo normal.
-  - `"vitoria"`: a bandeira desce, caem confetes e aparece "Fase concluída!" (ou "Você zerou o jogo!" na última fase).
+  - `"vitoria"`: a bandeira desce, caem confetes e aparece "Fase concluída!". Ao derrotar o chefão da última fase aparece a **tela final de vitória**, com troféu, dinheiro total e "Obrigado por jogar!".
   - `"gameover"`: aparece a tela de GAME OVER. O dinheiro volta ao valor do início da fase e as vidas são recarregadas.
 - **HUD:** dinheiro (R$), notas coletadas na fase, corações de vida e "Fase N/3 — Nome". No começo de cada fase aparece uma faixa com o nome dela.
 
@@ -77,7 +87,8 @@ Atravesse cada fase até o **mastro da bandeira de chegada**. No caminho, colete
 - [x] Etapa 3 — Itens de dinheiro, pontuação, inimigos (Fiscais) e vidas
 - [x] Etapa 4 — Fase 1 "Prefeitura" com bandeira de chegada, tela de "Fase concluída!" e GAME OVER
 - [x] Etapa 5 — Sistema de fases em dados (`fases.js`): Fase 2 "Shopping" e Fase 3 "Palácio" com plataformas móveis e armadilhas
-- [ ] Etapa 6 — Menu inicial, sons e ajustes finais
+- [x] Etapa 6 — Chefão "Doutor Burocracia" com barra de vida, processos arremessados e tela final de vitória
+- [ ] Etapa 7 — Menu inicial, sons e ajustes finais
 
 ## Desenvolvimento
 

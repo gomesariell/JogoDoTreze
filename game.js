@@ -1,7 +1,8 @@
 // =====================================================================
 // As Aventuras de Seu Fartura — jogo de plataforma 2D (sátira fictícia)
-// Etapa 6: sistema de fases. Os dados de cada fase ficam em fases.js;
-// este arquivo tem a lógica e o desenho, que funcionam para qualquer fase.
+// Etapa 7: chefão "Doutor Burocracia" no fim da Fase 3.
+// Os dados de cada fase ficam em fases.js; este arquivo tem a lógica e o
+// desenho, que funcionam para qualquer fase.
 // =====================================================================
 
 // ---------- Configuração do canvas ----------
@@ -31,6 +32,13 @@ const TAMANHO_ITEM = 24;          // caixa de colisão quadrada das notas
 const ALTURA_MOVEL = 24;          // espessura das plataformas móveis
 const ALTURA_ESPINHO = 18;
 
+// ---------- Chefão ----------
+const CHEFE_LARGURA = 64;
+const CHEFE_ALTURA = 88;
+const GRAVIDADE_PROCESSO = 900;   // os papéis caem em arco
+const TEMPO_VOO_PROCESSO = 1.05;  // quanto tempo um papel leva até o chão
+const FORCA_QUIQUE = 650;         // pulo do jogador depois de pisar no chefe
+
 // ---------- Estado do jogo ----------
 const estado = {
   camera: 0,           // quanto o mundo já andou para a direita (segue o jogador)
@@ -42,6 +50,7 @@ const estado = {
   tela: "jogando",     // "jogando", "vitoria" ou "gameover"
   tempoTela: 0,        // há quanto tempo está na tela atual (para animações)
   tempoFase: 0,        // há quanto tempo a fase começou
+  checkpointX: null,   // ao chegar no chefão, o game over volta para cá
   textos: [],          // textinhos flutuantes tipo "+R$100"
   confetes: [],        // festa na vitória
 };
@@ -54,6 +63,8 @@ let solidos = [];      // fixas + móveis: tudo em que o jogador pode pisar
 let armadilhas = [];   // espinhos
 let itens = [];        // notas de dinheiro
 let inimigos = [];     // Fiscais
+let chefe = null;      // o chefão da fase (se houver)
+let processos = [];    // papéis lançados pelo chefão
 
 // ---------- Personagem ----------
 const jogador = {
@@ -78,7 +89,8 @@ const jogador = {
 // retângulos com x, y, largura e altura que a física entende.
 // =====================================================================
 
-function carregarFase(indice) {
+// "inicioX" permite começar no meio da fase (checkpoint do chefão)
+function carregarFase(indice, inicioX = 100) {
   estado.faseAtual = indice;
   fase = FASES[indice];
 
@@ -87,11 +99,11 @@ function carregarFase(indice) {
   estado.tempoFase = 0;
   estado.textos = [];
   estado.confetes = [];
-  estado.camera = 0;
+  estado.camera = Math.max(0, Math.min(inicioX - LARGURA * 0.4, fase.largura - LARGURA));
   estado.pontosInicioFase = estado.pontos;
 
   Object.assign(jogador, {
-    x: 100, y: CHAO_Y - jogador.altura, vx: 0, vy: 0,
+    x: inicioX, y: CHAO_Y - jogador.altura, vx: 0, vy: 0,
     noChao: false, sobre: null, olhandoDireita: true,
     tempoCoyote: 0, bufferPulo: 0, invencivel: 0,
   });
@@ -148,24 +160,37 @@ function carregarFase(indice) {
     velocidade: d.velocidade,
     direcao: 1,
   }));
+
+  chefe = fase.chefao ? criarChefe(fase.chefao) : null;
+  processos = [];
 }
 
 // Começa o jogo do zero, na Fase 1
 function iniciarJogo() {
   estado.pontos = 0;
   estado.vidas = VIDAS_INICIAIS;
+  estado.checkpointX = null;
   carregarFase(0);
 }
 
 // Depois do game over: repete a mesma fase com vidas cheias
+// (se já tinha chegado no chefão, volta direto para a porta da arena)
 function tentarDeNovo() {
-  estado.pontos = estado.pontosInicioFase;
+  const pontos = estado.pontosInicioFase;
   estado.vidas = VIDAS_INICIAIS;
-  carregarFase(estado.faseAtual);
+  if (estado.checkpointX !== null) {
+    carregarFase(estado.faseAtual, estado.checkpointX);
+    criarTexto("Checkpoint!", jogador.x + jogador.largura / 2, jogador.y - 20, "#ffd700");
+  } else {
+    carregarFase(estado.faseAtual);
+  }
+  estado.pontos = pontos;
+  estado.pontosInicioFase = pontos;
 }
 
 // Depois da vitória: vai para a próxima fase (ou recomeça se zerou o jogo)
 function proximaFase() {
+  estado.checkpointX = null;
   if (estado.faseAtual + 1 < FASES.length) {
     carregarFase(estado.faseAtual + 1);
   } else {
@@ -295,8 +320,9 @@ function atualizarJogador(dt) {
     else if (j.vx < 0) j.x = p.x + p.largura;   // bateu do lado direito
     j.vx = 0;
   }
-  // não deixa sair das bordas da fase
-  j.x = Math.max(0, Math.min(j.x, fase.largura - j.largura));
+  // não deixa sair das bordas da fase (nem fugir da arena do chefão)
+  const limiteEsquerdo = chefe && chefe.ativo ? chefe.arenaX - 58 : 0;
+  j.x = Math.max(limiteEsquerdo, Math.min(j.x, fase.largura - j.largura));
 
   // 6) Move no eixo Y e resolve colisões de cima/baixo
   j.y += j.vy * dt;
@@ -318,7 +344,9 @@ function atualizarJogador(dt) {
 // A câmera segue o jogador com suavidade, sem sair da fase
 function atualizarCamera(dt) {
   const alvo = jogador.x + jogador.largura / 2 - LARGURA * 0.4;
-  const limitado = Math.max(0, Math.min(alvo, fase.largura - LARGURA));
+  let limitado = Math.max(0, Math.min(alvo, fase.largura - LARGURA));
+  // na luta contra o chefão a câmera fica parada mostrando a arena inteira
+  if (chefe && chefe.ativo) limitado = fase.largura - LARGURA;
   estado.camera += (limitado - estado.camera) * Math.min(1, dt * 8);
 }
 
@@ -391,9 +419,13 @@ function atualizarArmadilhas() {
 
 // Chegou no mastro da bandeira? Fase concluída!
 function verificarChegada() {
-  if (estado.tela !== "jogando") return;
+  if (estado.tela !== "jogando" || fase.bandeiraX === null) return;
   if (jogador.x + jogador.largura < fase.bandeiraX) return;
+  vencerFase();
+}
 
+// Fim da fase: desliga o controle e solta confetes
+function vencerFase() {
   estado.tela = "vitoria";
   estado.tempoTela = 0;
   jogador.vx = 0;
@@ -411,6 +443,147 @@ function verificarChegada() {
       cor: cores[i % cores.length],
     });
   }
+}
+
+// =====================================================================
+// CHEFÃO: DOUTOR BUROCRACIA
+// Estados: "esperando" (antes da arena) → "apresentando" → "andando" ⇄
+// "preparando" (vai lançar processos) → ... "atordoado" (levou pisão)
+// → "derrotado" (vida chegou a zero).
+// =====================================================================
+
+function criarChefe(dados) {
+  return {
+    nome: dados.nome,
+    x: dados.x,
+    y: CHAO_Y - CHEFE_ALTURA,
+    largura: CHEFE_LARGURA,
+    altura: CHEFE_ALTURA,
+    vidaMax: dados.vida,
+    vida: dados.vida,
+    arenaX: dados.arenaX,
+    minX: dados.arenaX + 40,
+    maxX: fase.largura - CHEFE_LARGURA - 20,
+    ativo: false,
+    estado: "esperando",
+    timer: 0,
+    tempoAtivo: 0,      // tempo desde que a luta começou (banner de apresentação)
+    direcao: -1,
+    piscando: 0,
+  };
+}
+
+// Quanto mais apanha, mais rápido e bravo ele fica
+function raivaDoChefe() {
+  return chefe.vidaMax - chefe.vida; // 0 no começo, 4 com 1 de vida
+}
+
+// Joga alguns papéis em arco na direção do jogador, espalhados
+function lancarProcessos() {
+  const c = chefe;
+  const quantidade = 2 + Math.floor(raivaDoChefe() / 2); // 2, 2, 3, 3, 4
+  const origemX = c.x + c.largura / 2;
+  const origemY = c.y + 16;
+  const alvoX = jogador.x + jogador.largura / 2;
+
+  for (let i = 0; i < quantidade; i++) {
+    const espalhar = (i - (quantidade - 1) / 2) * 110;
+    const dx = alvoX + espalhar - origemX;
+    processos.push({
+      x: origemX - 11,
+      y: origemY,
+      largura: 22,
+      altura: 16,
+      vx: Math.max(-700, Math.min(700, dx / TEMPO_VOO_PROCESSO)),
+      vy: -420 - Math.random() * 60,
+      giro: Math.random() * Math.PI,
+    });
+  }
+}
+
+function atualizarChefe(dt) {
+  if (!chefe) return;
+  const c = chefe;
+  const j = jogador;
+  c.piscando = Math.max(0, c.piscando - dt);
+
+  // a luta começa quando o jogador entra na arena
+  if (!c.ativo) {
+    if (j.x <= c.arenaX) return;
+    c.ativo = true;
+    c.estado = "apresentando";
+    c.timer = 1.8;
+    estado.checkpointX = c.arenaX - 40; // game over agora volta para a porta da arena
+  }
+  c.tempoAtivo += dt;
+  c.timer -= dt;
+
+  // --- comportamento de cada estado ---
+  if (c.estado === "apresentando") {
+    if (c.timer <= 0) { c.estado = "andando"; c.timer = 1.5; }
+  } else if (c.estado === "andando") {
+    const velocidade = 90 + raivaDoChefe() * 30;
+    c.x += c.direcao * velocidade * dt;
+    if (c.x < c.minX) { c.x = c.minX; c.direcao = 1; }
+    if (c.x > c.maxX) { c.x = c.maxX; c.direcao = -1; }
+    if (c.timer <= 0) { c.estado = "preparando"; c.timer = 0.6; }
+  } else if (c.estado === "preparando") {
+    // vira para o jogador e levanta o carimbo antes de lançar
+    c.direcao = j.x < c.x ? -1 : 1;
+    if (c.timer <= 0) {
+      lancarProcessos();
+      c.estado = "andando";
+      c.timer = Math.max(0.8, 2.2 - raivaDoChefe() * 0.3 + Math.random() * 0.6);
+    }
+  } else if (c.estado === "atordoado") {
+    if (c.timer <= 0) { c.estado = "andando"; c.timer = 0.8; }
+  } else if (c.estado === "derrotado") {
+    if (c.timer <= 0 && estado.tela === "jogando") vencerFase();
+    return;
+  }
+
+  // --- contato com o jogador ---
+  if (estado.tela !== "jogando" || !colide(j, c)) return;
+
+  // pisou em cima: estava caindo e os pés estão na parte de cima do chefe
+  const pisou = j.vy > 0 && j.y + j.altura - c.y < 30;
+  if (pisou) {
+    j.vy = -FORCA_QUIQUE; // quica para cima
+    j.noChao = false;
+    j.sobre = null;
+    if (c.estado === "atordoado" || c.estado === "apresentando") return;
+
+    c.vida--;
+    c.piscando = 1;
+    criarTexto("CARIMBADO!", c.x + c.largura / 2, c.y - 30, "#ffd700");
+    if (c.vida <= 0) {
+      c.estado = "derrotado";
+      c.timer = 2.5;
+      processos = [];
+      criarTexto("PROCESSO ARQUIVADO!", c.x + c.largura / 2, c.y - 55, "#7CFC00");
+    } else {
+      c.estado = "atordoado";
+      c.timer = 1;
+    }
+  } else if (c.estado !== "atordoado" && podeLevarDano()) {
+    levarDano(c.x + c.largura / 2); // encostou de lado
+  }
+}
+
+// Papéis voam em arco; somem ao tocar o chão ou o jogador
+function atualizarProcessos(dt) {
+  for (const p of processos) {
+    p.vy += GRAVIDADE_PROCESSO * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.giro += dt * 8;
+    if (p.y + p.altura >= CHAO_Y) p.morto = true;
+    if (!p.morto && podeLevarDano() && colide(jogador, p)) {
+      p.morto = true;
+      levarDano(p.x + p.largura / 2);
+    }
+  }
+  processos = processos.filter((p) => !p.morto);
 }
 
 // Confetes caem balançando
@@ -845,6 +1018,7 @@ function desenharPalacio(x) {
 
 // Mastro de chegada com bandeira quadriculada (desce quando você vence)
 function desenharBandeira() {
+  if (fase.bandeiraX === null) return; // fase com chefão não tem bandeira
   const x = Math.round(fase.bandeiraX - estado.camera);
   if (x < -100 || x > LARGURA + 100) return;
   const altura = 280;
@@ -1061,6 +1235,163 @@ function desenharInimigos() {
   }
 }
 
+// Doutor Burocracia: terno cinza, cartola, óculos redondos, bigodão,
+// um carimbo gigante numa mão e uma pilha de papéis na outra
+function desenharChefe() {
+  if (!chefe) return;
+  const c = chefe;
+  const x = Math.round(c.x - estado.camera);
+  if (x + c.largura < -40 || x > LARGURA + 40) return;
+  const y = Math.round(c.y);
+  const w = c.largura;
+  const h = c.altura;
+  const frente = c.direcao; // 1 = olhando para a direita
+  const derrotado = c.estado === "derrotado";
+
+  // pisca depois de levar um pisão
+  if (c.piscando > 0 && Math.floor(c.piscando * 14) % 2 === 0) return;
+
+  // sombra
+  ctx.fillStyle = "rgba(0, 0, 0, 0.25)";
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2, CHAO_Y, w / 2 + 6, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.save();
+  // derrotado: tomba para trás devagar
+  if (derrotado) {
+    const queda = Math.min(1, (2.5 - c.timer) / 0.6);
+    ctx.translate(x + w / 2, CHAO_Y);
+    ctx.rotate(-frente * queda * Math.PI / 2);
+    ctx.translate(-(x + w / 2), -CHAO_Y);
+  }
+
+  // pernas (balançam andando)
+  const passo = c.estado === "andando" ? Math.sin(estado.tempo * 12) * 4 : 0;
+  ctx.fillStyle = "#222";
+  ctx.fillRect(x + 10, y + h - 14 + passo, 16, 14 - passo);
+  ctx.fillRect(x + w - 26, y + h - 14 - passo, 16, 14 + passo);
+
+  // terno
+  ctx.fillStyle = "#4a4a4a";
+  ctx.fillRect(x, y + 32, w, h - 44);
+  ctx.fillStyle = "#fff"; // camisa
+  ctx.beginPath();
+  ctx.moveTo(x + w / 2 - 10, y + 32);
+  ctx.lineTo(x + w / 2 + 10, y + 32);
+  ctx.lineTo(x + w / 2, y + 52);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#b71c1c"; // gravata-borboleta
+  ctx.fillRect(x + w / 2 - 8, y + 33, 16, 6);
+  ctx.strokeStyle = "#2b2b2b";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, y + 33, w - 2, h - 46);
+
+  // cabeça
+  ctx.fillStyle = "#f0c8a0";
+  ctx.fillRect(x + 10, y + 6, w - 20, 28);
+
+  // cartola
+  ctx.fillStyle = "#111";
+  ctx.fillRect(x + 4, y + 4, w - 8, 6);      // aba
+  ctx.fillRect(x + 14, y - 22, w - 28, 28);  // copa
+  ctx.fillStyle = "#7b1e1e";
+  ctx.fillRect(x + 14, y - 2, w - 28, 5);    // fita
+
+  // óculos redondos (olhos viram X quando derrotado)
+  ctx.strokeStyle = "#111";
+  ctx.lineWidth = 2;
+  for (const ox of [x + w / 2 - 10, x + w / 2 + 10]) {
+    ctx.beginPath();
+    ctx.arc(ox, y + 18, 7, 0, Math.PI * 2);
+    ctx.stroke();
+    if (derrotado) {
+      ctx.beginPath();
+      ctx.moveTo(ox - 3, y + 15); ctx.lineTo(ox + 3, y + 21);
+      ctx.moveTo(ox + 3, y + 15); ctx.lineTo(ox - 3, y + 21);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = "#111";
+      ctx.fillRect(ox - 1 + frente * 2, y + 17, 3, 3);
+    }
+  }
+
+  // sobrancelhas bravas e bigodão
+  ctx.fillStyle = "#666";
+  ctx.fillRect(x + w / 2 - 17, y + 8, 12, 3);
+  ctx.fillRect(x + w / 2 + 5, y + 8, 12, 3);
+  ctx.fillStyle = "#777";
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2 - 8, y + 29, 10, 4, 0.2, 0, Math.PI * 2);
+  ctx.ellipse(x + w / 2 + 8, y + 29, 10, 4, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // pilha de papéis na mão de trás
+  const tras = frente > 0 ? x - 14 : x + w - 4;
+  for (let i = 0; i < 4; i++) {
+    ctx.fillStyle = i % 2 === 0 ? "#fdfdfd" : "#e8e8e8";
+    ctx.fillRect(tras + (i % 2), y + 58 - i * 5, 18, 5);
+  }
+
+  // carimbo gigante na mão da frente (levanta quando vai atacar)
+  const levantado = c.estado === "preparando";
+  const cx = frente > 0 ? x + w + 2 : x - 22;
+  const cy = levantado ? y - 30 : y + 40;
+  ctx.fillStyle = "#6d4c41"; // cabo
+  ctx.fillRect(cx + 6, cy, 8, 16);
+  ctx.beginPath();
+  ctx.arc(cx + 10, cy, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#c62828"; // base
+  ctx.fillRect(cx, cy + 16, 20, 9);
+
+  ctx.restore();
+
+  // nome acima
+  if (!derrotado) {
+    ctx.fillStyle = "#ffd700";
+    ctx.font = "bold 12px 'Trebuchet MS', Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(c.nome, x + w / 2, y - 30);
+    ctx.textAlign = "left";
+  }
+
+  // estrelinhas girando quando está atordoado
+  if (c.estado === "atordoado") {
+    ctx.fillStyle = "#ffd700";
+    ctx.font = "16px Arial";
+    ctx.textAlign = "center";
+    for (let i = 0; i < 3; i++) {
+      const ang = estado.tempo * 6 + (i * Math.PI * 2) / 3;
+      ctx.fillText("★", x + w / 2 + Math.cos(ang) * 26, y - 34 + Math.sin(ang) * 6);
+    }
+    ctx.textAlign = "left";
+  }
+}
+
+// Processos: folhas de papel girando, com linhas e um carimbo vermelho
+function desenharProcessos() {
+  for (const p of processos) {
+    const x = p.x - estado.camera + p.largura / 2;
+    const y = p.y + p.altura / 2;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(p.giro);
+    ctx.fillStyle = "#fffdf2";
+    ctx.fillRect(-11, -8, 22, 16);
+    ctx.strokeStyle = "#555";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-11, -8, 22, 16);
+    ctx.fillStyle = "#9e9e9e";
+    ctx.fillRect(-8, -5, 14, 2);
+    ctx.fillRect(-8, -1, 10, 2);
+    ctx.fillStyle = "#d32f2f";
+    ctx.fillRect(2, 2, 7, 4);
+    ctx.restore();
+  }
+}
+
 // Saco de dinheiro nas costas: cresce conforme o dinheiro acumulado
 function desenharSaco(x, y, w, olhandoDireita) {
   const notas = estado.pontos / VALOR_ITEM;
@@ -1231,9 +1562,47 @@ function desenharBannerFase() {
   ctx.fillText(`FASE ${fase.numero}`, LARGURA / 2, ALTURA / 2 - 20);
   ctx.fillStyle = "#fff";
   ctx.font = "22px 'Trebuchet MS', Arial";
-  ctx.fillText(`${fase.nome.toUpperCase()} — chegue até a bandeira!`, LARGURA / 2, ALTURA / 2 + 18);
+  const objetivo = fase.objetivo || "chegue até a bandeira!";
+  ctx.fillText(`${fase.nome.toUpperCase()} — ${objetivo}`, LARGURA / 2, ALTURA / 2 + 18);
   ctx.textAlign = "left";
   ctx.globalAlpha = 1;
+}
+
+// Barra de vida do chefão no topo da tela + apresentação no começo da luta
+function desenharHUDChefe() {
+  if (!chefe || !chefe.ativo || estado.tela === "vitoria") return;
+  const c = chefe;
+
+  // barra com um segmento por ponto de vida
+  const largura = 320;
+  const x = LARGURA / 2 - largura / 2;
+  const y = 96;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+  ctx.fillRect(x - 10, y - 24, largura + 20, 46);
+  ctx.fillStyle = "#ffd700";
+  ctx.font = "bold 14px 'Trebuchet MS', Arial";
+  ctx.textAlign = "center";
+  ctx.fillText(c.nome.toUpperCase(), LARGURA / 2, y - 8);
+  ctx.textAlign = "left";
+
+  const segmento = largura / c.vidaMax;
+  for (let i = 0; i < c.vidaMax; i++) {
+    ctx.fillStyle = i < c.vida ? "#e53935" : "#424242";
+    ctx.fillRect(x + i * segmento + 2, y, segmento - 4, 14);
+  }
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y - 1, largura, 16);
+
+  // faixa de apresentação nos primeiros segundos
+  if (c.tempoAtivo < 2.5) {
+    ctx.globalAlpha = Math.min(1, 2.5 - c.tempoAtivo);
+    ctx.fillStyle = "rgba(60, 0, 0, 0.7)";
+    ctx.fillRect(0, ALTURA / 2 - 60, LARGURA, 100);
+    textoCentral("⚠ CHEFÃO: DOUTOR BUROCRACIA ⚠", ALTURA / 2 - 12, 34, "#ffd700");
+    textoCentral("Desvie dos processos e pule na cabeça dele 5 vezes!", ALTURA / 2 + 24, 18, "#fff");
+    ctx.globalAlpha = 1;
+  }
 }
 
 // Texto grande com sombra, centralizado
@@ -1261,16 +1630,59 @@ function desenharGameOver() {
   ctx.globalAlpha = 1;
 }
 
-// Tela de FASE CONCLUÍDA (ou de jogo zerado, na última fase)
-function desenharVitoria() {
-  // confetes caindo
-  for (const c of estado.confetes) {
-    ctx.fillStyle = c.cor;
-    ctx.fillRect(c.x, c.y, 6, 10 * Math.abs(Math.cos(c.giro)) + 2);
+// Tela FINAL: aparece ao derrotar o chefão da última fase
+function desenharVitoriaFinal(alpha) {
+  ctx.globalAlpha = alpha;
+  const grad = ctx.createLinearGradient(0, 0, 0, ALTURA);
+  grad.addColorStop(0, "rgba(40, 20, 80, 0.92)");
+  grad.addColorStop(1, "rgba(120, 60, 0, 0.92)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, LARGURA, ALTURA);
+
+  // troféu simples desenhado com formas
+  const tx = LARGURA / 2;
+  const ty = 110 + Math.sin(estado.tempo * 2) * 4;
+  ctx.fillStyle = "#ffd700";
+  ctx.beginPath();
+  ctx.moveTo(tx - 34, ty - 30);
+  ctx.lineTo(tx + 34, ty - 30);
+  ctx.quadraticCurveTo(tx + 30, ty + 20, tx, ty + 24);
+  ctx.quadraticCurveTo(tx - 30, ty + 20, tx - 34, ty - 30);
+  ctx.fill();
+  ctx.fillRect(tx - 6, ty + 22, 12, 16);
+  ctx.fillRect(tx - 22, ty + 36, 44, 8);
+  ctx.strokeStyle = "#ffd700";
+  ctx.lineWidth = 5;
+  for (const lado of [-1, 1]) {
+    ctx.beginPath();
+    ctx.arc(tx + lado * 36, ty - 12, 12, lado > 0 ? -Math.PI / 2 : Math.PI / 2, lado > 0 ? Math.PI / 2 : Math.PI * 1.5);
+    ctx.stroke();
   }
 
-  // o painel só aparece depois que a bandeira desce
+  textoCentral("VITÓRIA!", 225, 64, "#ffd700");
+  textoCentral("O Doutor Burocracia foi derrotado!", 268, 24, "#fff");
+  textoCentral("Prefeitura, Shopping e Palácio: missão cumprida.", 300, 18, "#ddd");
+  textoCentral("Dinheiro total: R$ " + estado.pontos.toLocaleString("pt-BR"), 350, 28, "#7CFC00");
+  textoCentral(`Vidas restantes: ${estado.vidas}`, 385, 18, "#fff");
+  textoCentral("Obrigado por jogar!", 430, 22, "#ffd700");
+  if (estado.tempoTela > 1.5 && Math.floor(estado.tempo * 2) % 2 === 0) {
+    textoCentral("Aperte Enter para jogar de novo", 475, 16, "#ddd");
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Tela de FASE CONCLUÍDA (ou a tela final, na última fase)
+function desenharVitoria() {
   const alpha = Math.max(0, Math.min(1, (estado.tempoTela - 1.2) / 0.5));
+
+  if (ehUltimaFase()) {
+    if (alpha > 0) desenharVitoriaFinal(alpha);
+    desenharConfetes();
+    return;
+  }
+
+  desenharConfetes();
+  // o painel só aparece depois que a bandeira desce
   if (alpha === 0) return;
   ctx.globalAlpha = alpha;
   ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
@@ -1280,16 +1692,22 @@ function desenharVitoria() {
   ctx.strokeRect(LARGURA / 2 - 290, ALTURA / 2 - 120, 580, 230);
 
   const total = fase.itens.length;
-  const fim = ehUltimaFase();
-  textoCentral(fim ? "Você zerou o jogo!" : "Fase concluída!", ALTURA / 2 - 55, 52, "#ffd700");
+  textoCentral("Fase concluída!", ALTURA / 2 - 55, 52, "#ffd700");
   textoCentral(`Fase ${fase.numero} — ${fase.nome}`, ALTURA / 2 - 15, 20, "#fff");
   textoCentral("Dinheiro: R$ " + estado.pontos.toLocaleString("pt-BR"), ALTURA / 2 + 20, 22, "#7CFC00");
   textoCentral(`Notas: ${total - itens.length}/${total}   ·   Vidas: ${estado.vidas}`, ALTURA / 2 + 50, 18, "#fff");
   if (estado.tempoTela > 1.5 && Math.floor(estado.tempo * 2) % 2 === 0) {
-    const proxima = fim ? "Aperte Enter para jogar de novo" : "Aperte Enter para a próxima fase";
-    textoCentral(proxima, ALTURA / 2 + 88, 16, "#ddd");
+    textoCentral("Aperte Enter para a próxima fase", ALTURA / 2 + 88, 16, "#ddd");
   }
   ctx.globalAlpha = 1;
+}
+
+// Confetes caindo (desenhados por cima de tudo)
+function desenharConfetes() {
+  for (const c of estado.confetes) {
+    ctx.fillStyle = c.cor;
+    ctx.fillRect(c.x, c.y, 6, 10 * Math.abs(Math.cos(c.giro)) + 2);
+  }
 }
 
 // =====================================================================
@@ -1326,6 +1744,8 @@ function atualizar(dt) {
   atualizarItens();
   atualizarInimigos(dt);
   atualizarArmadilhas();
+  atualizarChefe(dt);
+  atualizarProcessos(dt);
   verificarChegada();
   atualizarCamera(dt);
 }
@@ -1340,9 +1760,12 @@ function desenhar() {
   desenharArmadilhas();
   desenharItens();
   desenharInimigos();
+  desenharChefe();
   desenharJogador();
+  desenharProcessos();
   desenharTextos();
   desenharHUD();
+  desenharHUDChefe();
   desenharBannerFase();
   if (estado.tela === "gameover") desenharGameOver();
   if (estado.tela === "vitoria") desenharVitoria();

@@ -15,6 +15,8 @@
 //                (balançam "distancia" pixels para cada lado do ponto inicial)
 //   armadilhas:  { x, largura, acima?, periodo? }   (espinhos; com "periodo"
 //                eles sobem e descem a cada "periodo" segundos)
+//   chefao:      { nome, x, arenaX, vida }          (opcional; com chefão a
+//                fase não tem bandeira: termina quando ele é derrotado)
 // =====================================================================
 
 const FASES = [
@@ -157,16 +159,21 @@ const FASES = [
 
   // ------------------------------------------------------------------
   // FASE 3 — PALÁCIO (noite estrelada, mármore e tapete vermelho,
-  // plataformas móveis e espinhos)
+  // plataformas móveis, espinhos e o chefão no final)
   // ------------------------------------------------------------------
   {
     numero: 3,
     nome: "Palácio",
     placa: "PALÁCIO →",
-    largura: 4600,
-    bandeiraX: 4180,
+    objetivo: "derrote o Doutor Burocracia!",
+    largura: 5000,
+    bandeiraX: null,     // sem bandeira: a fase termina ao derrotar o chefão
     predio: "palacio",
-    predioX: 4250,
+    predioX: 4620,
+
+    // Chefão: a luta começa quando o jogador passa de "arenaX".
+    // A câmera trava e o jogador não pode mais voltar.
+    chefao: { nome: "Doutor Burocracia", x: 4750, arenaX: 4150, vida: 5 },
 
     tema: {
       ceu: ["#0b1033", "#2a2a6e", "#5b4b8a"],
