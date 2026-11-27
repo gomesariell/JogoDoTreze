@@ -4,7 +4,7 @@ Jogo de plataforma 2D no estilo clássico, feito com **HTML, CSS e JavaScript pu
 
 ## Tema
 
-Sátira política com um personagem **100% fictício**: **Seu Fartura**, um político de roupa vermelha e barba branca que anda por aí carregando um saco de dinheiro. Qualquer semelhança com pessoas reais é mera coincidência.
+Sátira política com um personagem **100% fictício**: **Seu Fartura**, um político cartoon de cabelo branco, um tufinho de barba no queixo e só de cueca vermelha, atrás de todo dinheiro que encontra pela frente. Qualquer semelhança com pessoas reais é mera coincidência.
 
 ## Como jogar
 
@@ -17,8 +17,9 @@ Não precisa instalar nada.
 
 | Tecla | Ação |
 |---|---|
-| ← → ou A / D | Andar |
-| Espaço | Pular (segure para pular mais alto) |
+| A | Andar para a esquerda |
+| D | Andar para a direita |
+| W | Pular (segure para pular mais alto) |
 | Enter ou R | Próxima fase (na vitória) / tentar de novo (no game over) |
 
 ### Objetivo
@@ -56,11 +57,11 @@ No fim da Fase 3 não há bandeira: em frente ao Palácio espera o chefão **Dou
 
   As posições são dadas em "pixels acima do chão", por exemplo `[x, acima, largura]`. A função `carregarFase(indice)` do `game.js` converte esses dados em retângulos que a física entende. **Para criar uma fase nova basta adicionar um objeto ao array**, sem mexer na lógica.
 - **Cenário com parallax e tema:** céu em degradê, sol ou lua (com estrelas piscando à noite), nuvens, morros, cidade e chão. Cada camada se move numa velocidade diferente em relação à câmera, criando profundidade, e todas usam as cores do tema da fase.
-- **Personagem (Nine):** desenhado com formas do canvas: corpo retangular vermelho, rosto, barba branca, pernas que balançam ao andar e um **saco de dinheiro** nas costas que cresce conforme o dinheiro acumulado.
+- **Personagem (Nine):** desenhado em estilo cartoon com formas simples do canvas: cabeça redonda com cabelo branco, um tufinho curto de barba branca no queixo, tronco com barriguinha, **cueca vermelha** e braços e pernas que balançam ao andar. O rosto e a barriga viram para o lado em que ele anda.
 - **Física:** aceleração horizontal, gravidade e pulo. Para o controle ficar mais justo, há três ajudas:
   - *coyote time*: dá para pular logo depois de sair da beirada;
-  - *buffer* de pulo: apertar o Espaço um pouco antes de tocar o chão também vale;
-  - pulo variável: soltar o Espaço cedo faz um pulo mais baixo.
+  - *buffer* de pulo: apertar o W um pouco antes de tocar o chão também vale;
+  - pulo variável: soltar o W cedo faz um pulo mais baixo.
 - **Colisão:** tudo é retângulo (AABB). O movimento é resolvido primeiro no eixo X (paredes) e depois no eixo Y (chão e teto), em passos pequenos para nunca atravessar plataformas finas.
 - **Plataformas móveis:** a posição segue uma onda de seno (`base + sin(t * velocidade) * distancia`), no eixo X ou Y. O jogador guarda em `jogador.sobre` a plataforma em que está pisando e é deslocado junto com ela a cada passo.
 - **Armadilhas (espinhos):** encostar tira uma vida. As que têm `periodo` sobem e descem: ficam ativas em cerca de metade do ciclo.

@@ -206,13 +206,14 @@ function ehUltimaFase() {
 // Guarda quais teclas estão pressionadas agora (usando e.code, a tecla física).
 const teclas = {};
 
+// Controles: A = esquerda, D = direita, W = pular
+const TECLA_ESQUERDA = "KeyA";
+const TECLA_DIREITA = "KeyD";
+const TECLA_PULO = "KeyW";
+
 window.addEventListener("keydown", (e) => {
-  // impede a página de rolar com setas/espaço
-  if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space"].includes(e.code)) {
-    e.preventDefault();
-  }
   // o pulo é "lembrado" por um instante (buffer), não precisa de timing perfeito
-  if (e.code === "Space" && !e.repeat) {
+  if (e.code === TECLA_PULO && !e.repeat) {
     jogador.bufferPulo = TEMPO_BUFFER_PULO;
   }
 
@@ -228,8 +229,8 @@ window.addEventListener("keydown", (e) => {
 
 window.addEventListener("keyup", (e) => {
   teclas[e.code] = false;
-  // pulo variável: soltar o espaço cedo faz um pulo mais baixo
-  if (e.code === "Space" && jogador.vy < 0) {
+  // pulo variável: soltar o W cedo faz um pulo mais baixo
+  if (e.code === TECLA_PULO && jogador.vy < 0) {
     jogador.vy *= 0.45;
   }
 });
@@ -288,8 +289,8 @@ function atualizarJogador(dt) {
   // 1) Direção escolhida pelo teclado: -1 esquerda, 0 parado, 1 direita
   //    (fora da tela "jogando", o controle é desligado)
   const controle = estado.tela === "jogando";
-  const esquerda = controle && (teclas.ArrowLeft || teclas.KeyA);
-  const direita = controle && (teclas.ArrowRight || teclas.KeyD);
+  const esquerda = controle && teclas[TECLA_ESQUERDA];
+  const direita = controle && teclas[TECLA_DIREITA];
   const direcao = (direita ? 1 : 0) - (esquerda ? 1 : 0);
   if (!controle) j.bufferPulo = 0;
   if (direcao !== 0) j.olhandoDireita = direcao > 0;
@@ -1392,37 +1393,8 @@ function desenharProcessos() {
   }
 }
 
-// Saco de dinheiro nas costas: cresce conforme o dinheiro acumulado
-function desenharSaco(x, y, w, olhandoDireita) {
-  const notas = estado.pontos / VALOR_ITEM;
-  const raio = 9 + Math.min(notas, 40) * 0.4;
-  const cx = olhandoDireita ? x - raio * 0.4 : x + w + raio * 0.4;
-  const cy = y + 34 - raio * 0.3;
-
-  // saco
-  ctx.fillStyle = "#d9b77a";
-  ctx.strokeStyle = "#7a5a2b";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(cx, cy, raio, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-
-  // amarração no topo
-  ctx.fillStyle = "#7a5a2b";
-  ctx.fillRect(cx - 4, cy - raio - 4, 8, 6);
-
-  // cifrão
-  ctx.fillStyle = "#2e7d32";
-  ctx.font = `bold ${Math.round(raio * 1.1)}px Arial`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("$", cx, cy + 1);
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
-}
-
-// Nine: corpo retangular vermelho, rosto e barba branca
+// Nine: personagem cartoon de cueca vermelha, cabelo branco e
+// um tufinho de barba branca no queixo
 function desenharJogador() {
   const j = jogador;
 
@@ -1446,50 +1418,98 @@ function desenharJogador() {
     ctx.fill();
   }
 
-  // pernas
-  ctx.fillStyle = "#3a2a20";
-  ctx.fillRect(x + 5, y + h - 10 + passo, 11, 10 - passo);
-  ctx.fillRect(x + w - 16, y + h - 10 - passo, 11, 10 + passo);
-
-  // corpo (roupa vermelha)
-  ctx.fillStyle = "#d62828";
-  ctx.fillRect(x, y + 18, w, h - 26);
-  ctx.strokeStyle = "#5c0d0d";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(x + 1, y + 19, w - 2, h - 28);
-
-  // cinto
-  ctx.fillStyle = "#7a0f0f";
-  ctx.fillRect(x, y + 38, w, 4);
-
-  // cabeça (pele) com cabelo branco
-  ctx.fillStyle = "#f1c27d";
-  ctx.fillRect(x + 4, y, w - 8, 22);
-  ctx.fillStyle = "#f5f5f5";
-  ctx.fillRect(x + 4, y, w - 8, 5);
-
-  // olho e nariz do lado para onde está olhando
+  const PELE = "#e3b48c";
+  const PELE_SOMBRA = "#c9956c";
+  const CONTORNO = "#5a3d2b";
   const dir = j.olhandoDireita;
-  ctx.fillStyle = "#222";
-  ctx.fillRect(dir ? x + w - 14 : x + 10, y + 7, 4, 4);
-  ctx.fillStyle = "#e0a96d";
-  ctx.fillRect(dir ? x + w - 6 : x + 2, y + 10, 4, 5);
+  const lado = dir ? 1 : -1; // para espelhar detalhes do rosto
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = CONTORNO;
 
-  // saco de dinheiro (nas costas)
-  desenharSaco(x, y, w, dir);
+  // pernas (balançam ao andar) com pezinhos
+  ctx.fillStyle = PELE;
+  ctx.fillRect(x + 9, y + 44 + passo, 7, 12 - passo);
+  ctx.fillRect(x + w - 16, y + 44 - passo, 7, 12 + passo);
+  ctx.fillStyle = PELE_SOMBRA;
+  ctx.fillRect(x + 7 + (dir ? 2 : -1), y + h - 3, 10, 3);
+  ctx.fillRect(x + w - 18 + (dir ? 2 : -1), y + h - 3, 10, 3);
 
-  // barba branca (desce um pouco sobre a roupa)
-  ctx.fillStyle = "#ffffff";
+  // braço de trás (mais escuro, balança ao contrário)
+  const braco = andando ? Math.sin(estado.tempo * 18) * 4 : 0;
+  ctx.fillStyle = PELE_SOMBRA;
+  ctx.fillRect(dir ? x + 3 : x + w - 9, y + 23 - braco, 6, 15);
+
+  // tronco com barriguinha (a barriga fica para o lado em que ele olha)
+  const curvaDireita = dir ? x + w + 3 : x + w - 5;
+  const curvaEsquerda = dir ? x + 5 : x - 3;
+  ctx.fillStyle = PELE;
   ctx.beginPath();
-  ctx.moveTo(x + 4, y + 13);
-  ctx.lineTo(x + w - 4, y + 13);
-  ctx.lineTo(x + w - 4, y + 24);
-  ctx.quadraticCurveTo(x + w / 2, y + 38, x + 4, y + 24);
+  ctx.moveTo(x + 7, y + 20);
+  ctx.lineTo(x + w - 7, y + 20);
+  ctx.quadraticCurveTo(curvaDireita, y + 32, x + w - 6, y + 42);
+  ctx.lineTo(x + 6, y + 42);
+  ctx.quadraticCurveTo(curvaEsquerda, y + 32, x + 7, y + 20);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = "#cfcfcf";
-  ctx.lineWidth = 1;
   ctx.stroke();
+  // umbigo
+  ctx.fillStyle = PELE_SOMBRA;
+  ctx.fillRect(x + w / 2 + lado * 3, y + 34, 2, 2);
+
+  // cueca vermelha com elástico
+  ctx.fillStyle = "#d62828";
+  ctx.beginPath();
+  ctx.moveTo(x + 6, y + 40);
+  ctx.lineTo(x + w - 6, y + 40);
+  ctx.lineTo(x + w - 7, y + 47);
+  ctx.lineTo(x + w / 2 + 3, y + 49);
+  ctx.lineTo(x + w / 2 - 3, y + 49);
+  ctx.lineTo(x + 7, y + 47);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#9e1414";
+  ctx.fillRect(x + 6, y + 40, w - 12, 2);
+
+  // braço da frente
+  ctx.fillStyle = PELE;
+  ctx.fillRect(dir ? x + w - 10 : x + 4, y + 23 + braco, 6, 15);
+  ctx.strokeRect(dir ? x + w - 10 : x + 4, y + 23 + braco, 6, 15);
+
+  // cabeça redondinha
+  ctx.fillStyle = PELE;
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2, y + 11, 12, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // cabelo branco (topete e laterais)
+  ctx.fillStyle = "#f5f5f5";
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2 - lado * 2, y + 2, 10, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(dir ? x + w / 2 - 12 : x + w / 2 + 8, y + 4, 4, 8);
+
+  // olho, sobrancelha, nariz e sorriso do lado para onde está olhando
+  const ox = x + w / 2 + lado * 5;
+  ctx.fillStyle = "#222";
+  ctx.fillRect(ox - 1, y + 8, 3, 3);
+  ctx.fillStyle = "#eeeeee";
+  ctx.fillRect(ox - 3, y + 5, 6, 2);
+  ctx.fillStyle = PELE_SOMBRA;
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2 + lado * 11, y + 12, 3, 2.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = CONTORNO;
+  ctx.beginPath();
+  ctx.arc(x + w / 2 + lado * 5, y + 14, 3, 0.2, Math.PI - 0.2);
+  ctx.stroke();
+
+  // barba: só um tufinho curto e branco no queixo
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2 + lado * 4, y + 21, 5, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
 
   // nome acima da cabeça
   ctx.fillStyle = "#fff";

@@ -17,7 +17,8 @@
 ## Conteúdo
 - Tema: sátira política **leve e bem-humorada**.
 - **Todos os personagens são 100% fictícios.** Não usar nomes, rostos, partidos, números, slogans ou símbolos de pessoas ou partidos reais.
-- Protagonista: **Seu Fartura** — roupa vermelha, barba branca, carrega um saco de dinheiro.
+- Protagonista: **Seu Fartura** (no jogo, "Nine") — cartoon simples de cueca vermelha, pele em tom neutro, cabelo branco e um tufinho curto de barba branca no queixo. Visual bem-humorado, nada realista.
+- Controles: A (esquerda), D (direita), W (pular); Enter/R nas telas de vitória e game over.
 - Sem conteúdo ofensivo, discurso de ódio ou ataques a pessoas reais.
 
 ## Git
