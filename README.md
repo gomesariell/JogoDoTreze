@@ -58,6 +58,7 @@ No fim da Fase 3 não há bandeira: em frente ao Palácio espera o chefão **Dou
   As posições são dadas em "pixels acima do chão", por exemplo `[x, acima, largura]`. A função `carregarFase(indice)` do `game.js` converte esses dados em retângulos que a física entende. **Para criar uma fase nova basta adicionar um objeto ao array**, sem mexer na lógica.
 - **Cenário com parallax e tema:** céu em degradê, sol ou lua (com estrelas piscando à noite), nuvens, morros, cidade e chão. Cada camada se move numa velocidade diferente em relação à câmera, criando profundidade, e todas usam as cores do tema da fase.
 - **Personagem (Nine):** desenhado em estilo cartoon com formas simples do canvas: cabeça redonda com cabelo branco, um tufinho curto de barba branca no queixo, tronco com barriguinha, **cueca vermelha** e braços e pernas que balançam ao andar. O rosto e a barriga viram para o lado em que ele anda.
+  - **Dinheiro na cueca:** conforme ele coleta notas, o dinheiro vai aparecendo na cueca. A cada 3 notas, uma notinha verde fica enfiada no elástico (até 8). A cueca vai ficando estufada, ganha um cifrão dourado a partir de 6 notas e, com 12 e 20 notas, começam a escapar notas pelas pernas. As notas balançam ao andar e chacoalham durante o pulo.
 - **Física:** aceleração horizontal, gravidade e pulo. Para o controle ficar mais justo, há três ajudas:
   - *coyote time*: dá para pular logo depois de sair da beirada;
   - *buffer* de pulo: apertar o W um pouco antes de tocar o chão também vale;

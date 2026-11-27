@@ -1393,6 +1393,29 @@ function desenharProcessos() {
   }
 }
 
+// Posição (em relação ao centro) e inclinação de cada nota enfiada na
+// cueca, na ordem em que vão aparecendo (1 nova a cada 3 coletadas)
+const NOTAS_NA_CUECA = [
+  { dx: -5, ang: -0.35 }, { dx: 5, ang: 0.3 },  { dx: 0, ang: 0.05 },
+  { dx: -11, ang: -0.7 }, { dx: 10, ang: 0.65 }, { dx: -2, ang: -0.15 },
+  { dx: 8, ang: 0.45 },   { dx: -8, ang: -0.5 },
+];
+
+// Uma notinha verde presa pela base (cx, cy), apontando para cima e girada
+function desenharNotaPequena(cx, cy, angulo, comprimento) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(angulo);
+  ctx.fillStyle = "#2e9e44";
+  ctx.fillRect(-3.5, -comprimento, 7, comprimento);
+  ctx.strokeStyle = "#145c22";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(-3.5, -comprimento, 7, comprimento);
+  ctx.fillStyle = "#c8f5c8"; // detalhe claro no meio da nota
+  ctx.fillRect(-1, -comprimento + 3, 2, 3);
+  ctx.restore();
+}
+
 // Nine: personagem cartoon de cueca vermelha, cabelo branco e
 // um tufinho de barba branca no queixo
 function desenharJogador() {
@@ -1456,20 +1479,51 @@ function desenharJogador() {
   ctx.fillStyle = PELE_SOMBRA;
   ctx.fillRect(x + w / 2 + lado * 3, y + 34, 2, 2);
 
-  // cueca vermelha com elástico
+  // --- dinheiro na cueca: quanto mais notas, mais aparece ---
+  const notas = Math.floor(estado.pontos / VALOR_ITEM);
+  const estufado = (Math.min(notas, 30) / 30) * 4; // cueca incha até 4px
+  // as notas balançam ao andar e chacoalham no ar
+  const balanco = !j.noChao ? Math.sin(estado.tempo * 25) * 0.2
+                : andando ? Math.sin(estado.tempo * 18) * 0.12 : 0;
+
+  // notas enfiadas no elástico (desenhadas antes da cueca, que cobre a base)
+  const naCintura = Math.min(NOTAS_NA_CUECA.length, Math.floor(notas / 3));
+  for (let i = 0; i < naCintura; i++) {
+    const n = NOTAS_NA_CUECA[i];
+    desenharNotaPequena(x + w / 2 + n.dx, y + 43, n.ang + balanco, 10 + (i % 3));
+  }
+
+  // cueca vermelha com elástico (fica mais estufada com o dinheiro)
+  ctx.strokeStyle = CONTORNO;
+  ctx.lineWidth = 1.5;
   ctx.fillStyle = "#d62828";
   ctx.beginPath();
   ctx.moveTo(x + 6, y + 40);
   ctx.lineTo(x + w - 6, y + 40);
-  ctx.lineTo(x + w - 7, y + 47);
-  ctx.lineTo(x + w / 2 + 3, y + 49);
-  ctx.lineTo(x + w / 2 - 3, y + 49);
-  ctx.lineTo(x + 7, y + 47);
+  ctx.lineTo(x + w - 7 + estufado, y + 47);
+  ctx.lineTo(x + w / 2 + 3, y + 49 + estufado / 2);
+  ctx.lineTo(x + w / 2 - 3, y + 49 + estufado / 2);
+  ctx.lineTo(x + 7 - estufado, y + 47);
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
   ctx.fillStyle = "#9e1414";
   ctx.fillRect(x + 6, y + 40, w - 12, 2);
+
+  // cifrão estampado quando a cueca já está bem cheia
+  if (notas >= 6) {
+    ctx.fillStyle = "#ffd700";
+    ctx.font = "bold 7px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("$", x + w / 2, y + 47);
+    ctx.textAlign = "left";
+  }
+
+  // notas escapando pelas pernas da cueca
+  if (notas >= 12) desenharNotaPequena(x + 9 - estufado, y + 46, Math.PI + 0.7 - balanco, 9);
+  if (notas >= 20) desenharNotaPequena(x + w - 9 + estufado, y + 46, Math.PI - 0.7 + balanco, 9);
+  ctx.strokeStyle = CONTORNO;
+  ctx.lineWidth = 1.5;
 
   // braço da frente
   ctx.fillStyle = PELE;
