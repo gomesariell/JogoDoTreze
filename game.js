@@ -1,6 +1,6 @@
 // =====================================================================
 // As Aventuras de Seu Fartura — jogo de plataforma 2D (sátira fictícia)
-// Etapa 2: personagem com movimento, pulo, gravidade e colisão.
+// Etapa 3: itens de dinheiro, pontuação, inimigos (Fiscais) e vidas.
 // =====================================================================
 
 // ---------- Configuração do canvas ----------
@@ -23,9 +23,17 @@ const TEMPO_BUFFER_PULO = 0.12;   // aperto de pulo "lembrado" antes de tocar o 
 
 // ---------- Estado do jogo ----------
 // "camera" é quanto o mundo já andou para a direita (segue o jogador).
+const VIDAS_INICIAIS = 3;
+const VALOR_ITEM = 100;           // quanto vale cada nota de dinheiro
+const TEMPO_INVENCIVEL = 1.5;     // segundos piscando depois de levar dano
+
 const estado = {
   camera: 0,
-  tempo: 0, // tempo total em segundos (usado em animações)
+  tempo: 0,          // tempo total em segundos (usado em animações)
+  pontos: 0,         // dinheiro acumulado (R$)
+  vidas: VIDAS_INICIAIS,
+  fimDeJogo: false,
+  textos: [],        // textinhos flutuantes tipo "+R$100"
 };
 
 // ---------- Personagem ----------
@@ -41,6 +49,8 @@ const jogador = {
   olhandoDireita: true,
   tempoCoyote: 0,
   bufferPulo: 0,
+  itensColetados: 0,   // quanto mais itens, maior o saco de dinheiro
+  invencivel: 0,       // tempo restante de invencibilidade após dano
 };
 
 // ---------- Plataformas (coordenadas do mundo) ----------
@@ -60,6 +70,76 @@ const plataformas = [
   { x: 2800, y: CHAO_Y - 220, largura: 192, altura: 32 },
 ];
 
+// ---------- Itens de dinheiro ----------
+// Posição do CENTRO de cada nota (a maioria flutua logo acima das plataformas).
+const POSICOES_ITENS = [
+  [250, CHAO_Y - 30],
+  [390, CHAO_Y - 140], [450, CHAO_Y - 140],
+  [664, CHAO_Y - 240],
+  [890, CHAO_Y - 150], [950, CHAO_Y - 150], [1010, CHAO_Y - 150],
+  [1100, CHAO_Y - 30],
+  [1198, CHAO_Y - 130],
+  [1348, CHAO_Y - 230],
+  [1500, CHAO_Y - 330], [1560, CHAO_Y - 330],
+  [1650, CHAO_Y - 30],
+  [1832, CHAO_Y - 95],
+  [2050, CHAO_Y - 160], [2110, CHAO_Y - 160], [2170, CHAO_Y - 160],
+  [2382, CHAO_Y - 130],
+  [2480, CHAO_Y - 30],
+  [2600, CHAO_Y - 150], [2660, CHAO_Y - 150],
+  [2860, CHAO_Y - 250], [2930, CHAO_Y - 250],
+  [3080, CHAO_Y - 30],
+];
+const TAMANHO_ITEM = 24; // caixa de colisão quadrada
+let itens = [];
+
+// ---------- Inimigos: os Fiscais ----------
+// Cada um anda de um lado para o outro entre "min" e "max".
+const FISCAL_LARGURA = 34;
+const FISCAL_ALTURA = 48;
+const DADOS_FISCAIS = [
+  { x: 560,  y: CHAO_Y,       min: 530,  max: 820,                   velocidade: 80 },
+  { x: 2050, y: CHAO_Y - 130, min: 2000, max: 2224 - FISCAL_LARGURA, velocidade: 60 },
+  { x: 2500, y: CHAO_Y,       min: 2430, max: 2780,                  velocidade: 100 },
+];
+let inimigos = [];
+
+// Coloca tudo no estado inicial (usado no começo e ao recomeçar)
+function reiniciarJogo() {
+  estado.pontos = 0;
+  estado.vidas = VIDAS_INICIAIS;
+  estado.fimDeJogo = false;
+  estado.textos = [];
+  estado.camera = 0;
+
+  Object.assign(jogador, {
+    x: 100, y: CHAO_Y - jogador.altura, vx: 0, vy: 0,
+    noChao: false, olhandoDireita: true, tempoCoyote: 0, bufferPulo: 0,
+    itensColetados: 0, invencivel: 0,
+  });
+
+  itens = POSICOES_ITENS.map(([cx, cy]) => ({
+    x: cx - TAMANHO_ITEM / 2,
+    y: cy - TAMANHO_ITEM / 2,
+    largura: TAMANHO_ITEM,
+    altura: TAMANHO_ITEM,
+    fase: Math.random() * Math.PI * 2, // para cada nota flutuar num ritmo diferente
+  }));
+
+  // "y" nos dados é onde ficam os pés do Fiscal
+  inimigos = DADOS_FISCAIS.map((d) => ({
+    x: d.x,
+    y: d.y - FISCAL_ALTURA,
+    largura: FISCAL_LARGURA,
+    altura: FISCAL_ALTURA,
+    min: d.min,
+    max: d.max,
+    velocidade: d.velocidade,
+    direcao: 1,
+  }));
+}
+reiniciarJogo();
+
 // ---------- Teclado ----------
 // Guarda quais teclas estão pressionadas agora (usando e.code, a tecla física).
 const teclas = {};
@@ -72,6 +152,10 @@ window.addEventListener("keydown", (e) => {
   // o pulo é "lembrado" por um instante (buffer), não precisa de timing perfeito
   if (e.code === "Space" && !e.repeat) {
     jogador.bufferPulo = TEMPO_BUFFER_PULO;
+  }
+  // na tela de fim de jogo, R ou Enter recomeça
+  if (estado.fimDeJogo && (e.code === "KeyR" || e.code === "Enter")) {
+    reiniciarJogo();
   }
   teclas[e.code] = true;
 });
@@ -162,6 +246,61 @@ function atualizarCamera(dt) {
   const alvo = jogador.x + jogador.largura / 2 - LARGURA * 0.4;
   const limitado = Math.max(0, Math.min(alvo, MUNDO_LARGURA - LARGURA));
   estado.camera += (limitado - estado.camera) * Math.min(1, dt * 8);
+}
+
+// Cria um textinho que sobe e some (ex: "+R$100")
+function criarTexto(texto, x, y, cor) {
+  estado.textos.push({ texto, x, y, cor, vida: 1 });
+}
+
+// Encostou numa nota? Ela some e o dinheiro aumenta
+function atualizarItens() {
+  for (let i = itens.length - 1; i >= 0; i--) {
+    if (!colide(jogador, itens[i])) continue;
+    const item = itens[i];
+    itens.splice(i, 1);
+    estado.pontos += VALOR_ITEM;
+    jogador.itensColetados++;
+    criarTexto("+R$" + VALOR_ITEM, item.x + item.largura / 2, item.y, "#7CFC00");
+  }
+}
+
+// Fiscais patrulham e tiram uma vida se encostarem no jogador
+function atualizarInimigos(dt) {
+  const j = jogador;
+  j.invencivel = Math.max(0, j.invencivel - dt);
+
+  for (const f of inimigos) {
+    // anda e vira ao chegar no limite da patrulha
+    f.x += f.direcao * f.velocidade * dt;
+    if (f.x < f.min) { f.x = f.min; f.direcao = 1; }
+    if (f.x > f.max) { f.x = f.max; f.direcao = -1; }
+
+    // dano (só se não estiver piscando)
+    if (j.invencivel > 0 || !colide(j, f)) continue;
+    estado.vidas--;
+    j.invencivel = TEMPO_INVENCIVEL;
+    criarTexto("-1 vida", j.x + j.largura / 2, j.y, "#ff4d4d");
+
+    // empurrão para longe do Fiscal
+    const ladoJogador = j.x + j.largura / 2 < f.x + f.largura / 2 ? -1 : 1;
+    j.vx = ladoJogador * 400;
+    j.vy = -450;
+    j.noChao = false;
+
+    if (estado.vidas <= 0) {
+      estado.fimDeJogo = true;
+    }
+  }
+}
+
+// Textos flutuantes sobem e desaparecem em 1 segundo
+function atualizarTextos(dt) {
+  for (const t of estado.textos) {
+    t.y -= 40 * dt;
+    t.vida -= dt;
+  }
+  estado.textos = estado.textos.filter((t) => t.vida > 0);
 }
 
 // ---------- Elementos do cenário (gerados uma vez) ----------
@@ -355,9 +494,127 @@ function desenharPlataformas() {
   }
 }
 
+// Notas de dinheiro verdes que flutuam para cima e para baixo
+function desenharItens() {
+  for (const item of itens) {
+    const x = item.x - estado.camera;
+    if (x + item.largura < 0 || x > LARGURA) continue;
+    const cx = x + item.largura / 2;
+    const cy = item.y + item.altura / 2 + Math.sin(estado.tempo * 4 + item.fase) * 4;
+
+    // brilho
+    ctx.fillStyle = "rgba(180, 255, 150, 0.35)";
+    ctx.beginPath();
+    ctx.arc(cx, cy, 18, 0, Math.PI * 2);
+    ctx.fill();
+
+    // nota
+    ctx.fillStyle = "#2e9e44";
+    ctx.fillRect(cx - 14, cy - 9, 28, 18);
+    ctx.strokeStyle = "#145c22";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(cx - 14, cy - 9, 28, 18);
+    ctx.fillStyle = "#c8f5c8";
+    ctx.font = "bold 13px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("$", cx, cy + 1);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+  }
+}
+
+// Fiscal: terno azul-escuro, boné, óculos escuros e prancheta
+function desenharInimigos() {
+  for (const f of inimigos) {
+    const x = Math.round(f.x - estado.camera);
+    if (x + f.largura < 0 || x > LARGURA) continue;
+    const y = Math.round(f.y);
+    const w = f.largura;
+    const h = f.altura;
+    const olhaDireita = f.direcao > 0;
+    const passo = Math.sin(estado.tempo * 14 + f.min) * 3;
+
+    // sombra
+    ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+    ctx.beginPath();
+    ctx.ellipse(x + w / 2, y + h, w / 2, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // pernas
+    ctx.fillStyle = "#1b1b1b";
+    ctx.fillRect(x + 5, y + h - 9 + passo, 10, 9 - passo);
+    ctx.fillRect(x + w - 15, y + h - 9 - passo, 10, 9 + passo);
+
+    // terno
+    ctx.fillStyle = "#2c3e66";
+    ctx.fillRect(x, y + 16, w, h - 24);
+    ctx.fillStyle = "#ffffff"; // camisa
+    ctx.fillRect(x + w / 2 - 4, y + 16, 8, 12);
+    ctx.fillStyle = "#c0392b"; // gravata
+    ctx.fillRect(x + w / 2 - 2, y + 17, 4, 12);
+
+    // cabeça, boné e óculos escuros
+    ctx.fillStyle = "#e8b88a";
+    ctx.fillRect(x + 5, y + 2, w - 10, 16);
+    ctx.fillStyle = "#1f2a44";
+    ctx.fillRect(x + 3, y, w - 6, 6);
+    ctx.fillRect(olhaDireita ? x + w - 6 : x - 2, y + 4, 8, 3); // aba do boné
+    ctx.fillStyle = "#111";
+    ctx.fillRect(x + 7, y + 8, w - 14, 4);
+
+    // prancheta na mão da frente
+    const px = olhaDireita ? x + w - 4 : x - 8;
+    ctx.fillStyle = "#a0522d";
+    ctx.fillRect(px, y + 22, 12, 15);
+    ctx.fillStyle = "#f4f4f4";
+    ctx.fillRect(px + 2, y + 24, 8, 11);
+
+    // nome acima
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 11px 'Trebuchet MS', Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("Fiscal", x + w / 2, y - 6);
+    ctx.textAlign = "left";
+  }
+}
+
+// Saco de dinheiro nas costas: cresce conforme os itens coletados
+function desenharSaco(x, y, w, olhandoDireita) {
+  const raio = 9 + Math.min(jogador.itensColetados, 24) * 0.6;
+  const cx = olhandoDireita ? x - raio * 0.4 : x + w + raio * 0.4;
+  const cy = y + 34 - raio * 0.3;
+
+  // saco
+  ctx.fillStyle = "#d9b77a";
+  ctx.strokeStyle = "#7a5a2b";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, raio, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // amarração no topo
+  ctx.fillStyle = "#7a5a2b";
+  ctx.fillRect(cx - 4, cy - raio - 4, 8, 6);
+
+  // cifrão
+  ctx.fillStyle = "#2e7d32";
+  ctx.font = `bold ${Math.round(raio * 1.1)}px Arial`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("$", cx, cy + 1);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+}
+
 // Nine: corpo retangular vermelho, rosto e barba branca
 function desenharJogador() {
   const j = jogador;
+
+  // pisca enquanto está invencível (depois de levar dano)
+  if (j.invencivel > 0 && Math.floor(j.invencivel * 12) % 2 === 0) return;
+
   const x = Math.round(j.x - estado.camera);
   const y = Math.round(j.y);
   const w = j.largura;
@@ -404,6 +661,9 @@ function desenharJogador() {
   ctx.fillStyle = "#e0a96d";
   ctx.fillRect(dir ? x + w - 6 : x + 2, y + 10, 4, 5);
 
+  // saco de dinheiro (nas costas)
+  desenharSaco(x, y, w, dir);
+
   // barba branca (desce um pouco sobre a roupa)
   ctx.fillStyle = "#ffffff";
   ctx.beginPath();
@@ -425,13 +685,58 @@ function desenharJogador() {
   ctx.textAlign = "left";
 }
 
-// Instruções no topo da tela
-function desenharHUD() {
-  ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
-  ctx.fillRect(16, 16, 330, 40);
-  ctx.fillStyle = "#fff";
+// Textos flutuantes ("+R$100", "-1 vida")
+function desenharTextos() {
   ctx.font = "bold 16px 'Trebuchet MS', Arial";
-  ctx.fillText("← → ou A/D: andar   Espaço: pular", 28, 42);
+  ctx.textAlign = "center";
+  for (const t of estado.textos) {
+    ctx.globalAlpha = Math.max(0, t.vida);
+    const x = t.x - estado.camera;
+    ctx.fillStyle = "#000";
+    ctx.fillText(t.texto, x + 1, t.y + 1);
+    ctx.fillStyle = t.cor;
+    ctx.fillText(t.texto, x, t.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = "left";
+}
+
+// Painel com dinheiro, itens restantes e vidas
+function desenharHUD() {
+  ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+  ctx.fillRect(16, 16, 260, 70);
+
+  ctx.font = "bold 20px 'Trebuchet MS', Arial";
+  ctx.fillStyle = "#7CFC00";
+  ctx.fillText("R$ " + estado.pontos.toLocaleString("pt-BR"), 28, 44);
+
+  ctx.font = "14px 'Trebuchet MS', Arial";
+  ctx.fillStyle = "#fff";
+  const total = POSICOES_ITENS.length;
+  ctx.fillText(`Notas: ${total - itens.length}/${total}`, 28, 70);
+
+  // corações das vidas
+  ctx.font = "20px Arial";
+  for (let i = 0; i < VIDAS_INICIAIS; i++) {
+    ctx.fillStyle = i < estado.vidas ? "#ff4d4d" : "rgba(255, 255, 255, 0.25)";
+    ctx.fillText("♥", 170 + i * 26, 44);
+  }
+}
+
+// Tela escura de fim de jogo
+function desenharFimDeJogo() {
+  ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+  ctx.fillRect(0, 0, LARGURA, ALTURA);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ff4d4d";
+  ctx.font = "bold 56px 'Trebuchet MS', Arial";
+  ctx.fillText("FIM DE JOGO", LARGURA / 2, ALTURA / 2 - 30);
+  ctx.fillStyle = "#fff";
+  ctx.font = "22px 'Trebuchet MS', Arial";
+  ctx.fillText("Os Fiscais pegaram você! Total: R$ " + estado.pontos.toLocaleString("pt-BR"),
+               LARGURA / 2, ALTURA / 2 + 15);
+  ctx.fillText("Aperte R ou Enter para recomeçar", LARGURA / 2, ALTURA / 2 + 50);
+  ctx.textAlign = "left";
 }
 
 // ---------- Loop principal ----------
@@ -440,6 +745,8 @@ function desenharHUD() {
 // assim o jogo roda na mesma velocidade em qualquer monitor (60Hz, 144Hz...).
 function atualizar(dt) {
   estado.tempo += dt;
+  atualizarTextos(dt);
+  if (estado.fimDeJogo) return; // jogo parado esperando recomeçar
 
   // divide o quadro em passos pequenos para o jogador nunca "atravessar"
   // uma plataforma fina quando está caindo rápido
@@ -450,14 +757,20 @@ function atualizar(dt) {
     restante -= passo;
   }
 
+  atualizarItens();
+  atualizarInimigos(dt);
   atualizarCamera(dt);
 }
 
 function desenhar() {
   desenharCenario();
   desenharPlataformas();
+  desenharItens();
+  desenharInimigos();
   desenharJogador();
+  desenharTextos();
   desenharHUD();
+  if (estado.fimDeJogo) desenharFimDeJogo();
 }
 
 let ultimoTempo = performance.now();

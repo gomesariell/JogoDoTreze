@@ -19,6 +19,11 @@ Não precisa instalar nada.
 |---|---|
 | ← → ou A / D | Andar |
 | Espaço | Pular (segure para pular mais alto) |
+| R ou Enter | Recomeçar (na tela de fim de jogo) |
+
+### Objetivo
+
+Colete as notas de dinheiro espalhadas pela fase (cada uma vale R$ 100) e fuja dos **Fiscais**. Você tem 3 vidas: cada vez que encosta num Fiscal perde uma, é empurrado para trás e fica alguns instantes piscando (invencível). Sem vidas, é fim de jogo.
 
 ## Estrutura do projeto
 
@@ -38,12 +43,15 @@ Não precisa instalar nada.
 - **Física:** a cada passo o jogo aplica aceleração horizontal, gravidade e o pulo. Inclui *coyote time* (dá para pular logo após sair da beirada), *buffer* de pulo (apertar espaço um pouco antes de tocar o chão também vale) e pulo variável (soltar o espaço cedo faz um pulo mais baixo).
 - **Colisão:** jogador e plataformas são retângulos (AABB). O movimento é resolvido primeiro no eixo X (paredes) e depois no eixo Y (chão e teto). O quadro é dividido em passos pequenos para nunca atravessar plataformas finas.
 - **Câmera:** segue o jogador suavemente pela fase (3200 px de largura).
+- **Itens de dinheiro:** 24 notas flutuando sobre as plataformas e o chão. Quando o retângulo do jogador encosta numa nota, ela é removida da lista, a pontuação sobe R$ 100 e aparece um "+R$100" flutuante. O **saco de dinheiro** nas costas do personagem cresce a cada nota coletada.
+- **Inimigos (Fiscais):** 3 Fiscais patrulham de um lado para o outro entre dois limites (dois no chão e um em cima de uma plataforma). Encostar neles tira uma vida e dá 1,5 s de invencibilidade.
+- **HUD:** mostra o dinheiro (R$), quantas notas foram coletadas e os corações de vida. No fim de jogo aparece uma tela com o total e a opção de recomeçar (`reiniciarJogo()` volta tudo ao estado inicial).
 
 ## Progresso
 
 - [x] Etapa 1 — Canvas, loop do jogo e cenário de fundo
 - [x] Etapa 2 — Personagem andando e pulando, com gravidade e colisão com chão e plataformas
-- [ ] Etapa 4 — Itens, inimigos e pontuação
+- [x] Etapa 4 — Itens de dinheiro, pontuação, inimigos (Fiscais) e vidas
 - [ ] Etapa 5 — Menu, fases e fim de jogo
 
 ## Desenvolvimento
