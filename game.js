@@ -1,6 +1,6 @@
 // =====================================================================
 // As Aventuras de Seu Fartura — jogo de plataforma 2D (sátira fictícia)
-// Etapa 1: canvas, loop do jogo e cenário de fundo com parallax.
+// Etapa 2: personagem com movimento, pulo, gravidade e colisão.
 // =====================================================================
 
 // ---------- Configuração do canvas ----------
@@ -10,14 +10,159 @@ const LARGURA = canvas.width;   // 960
 const ALTURA = canvas.height;   // 540
 const CHAO_Y = ALTURA - 80;     // altura onde começa o chão
 
+// ---------- Física (valores em pixels e segundos) ----------
+const MUNDO_LARGURA = 3200;       // tamanho total da fase
+const GRAVIDADE = 2000;           // aceleração para baixo
+const VELOCIDADE_MAX_QUEDA = 900; // limite de velocidade caindo
+const VELOCIDADE_ANDAR = 260;     // velocidade máxima andando
+const ACELERACAO_CHAO = 2200;     // quão rápido acelera/freia no chão
+const ACELERACAO_AR = 1300;       // controle no ar é um pouco menor
+const FORCA_PULO = 720;           // velocidade inicial do pulo (~130px de altura)
+const TEMPO_COYOTE = 0.1;         // pode pular logo depois de sair da beirada
+const TEMPO_BUFFER_PULO = 0.12;   // aperto de pulo "lembrado" antes de tocar o chão
+
 // ---------- Estado do jogo ----------
-// "camera" é quanto o mundo já andou para a direita.
-// Por enquanto ela anda sozinha só para mostrar o parallax funcionando.
+// "camera" é quanto o mundo já andou para a direita (segue o jogador).
 const estado = {
   camera: 0,
-  velocidadeCamera: 90, // pixels por segundo
-  tempo: 0,             // tempo total em segundos (usado em animações)
+  tempo: 0, // tempo total em segundos (usado em animações)
 };
+
+// ---------- Personagem ----------
+const jogador = {
+  nome: "Nine",
+  x: 100,
+  y: CHAO_Y - 56,
+  largura: 36,
+  altura: 56,
+  vx: 0,               // velocidade horizontal
+  vy: 0,               // velocidade vertical (positivo = para baixo)
+  noChao: false,
+  olhandoDireita: true,
+  tempoCoyote: 0,
+  bufferPulo: 0,
+};
+
+// ---------- Plataformas (coordenadas do mundo) ----------
+// O chão também é uma "plataforma", só que desenhado separado.
+const plataformas = [
+  { x: 0, y: CHAO_Y, largura: MUNDO_LARGURA, altura: ALTURA - CHAO_Y, chao: true },
+  { x: 350,  y: CHAO_Y - 110, largura: 160, altura: 32 },
+  { x: 600,  y: CHAO_Y - 210, largura: 128, altura: 32 },
+  { x: 850,  y: CHAO_Y - 120, largura: 192, altura: 32 },
+  { x: 1150, y: CHAO_Y - 100, largura: 96,  altura: 32 },
+  { x: 1300, y: CHAO_Y - 200, largura: 96,  altura: 32 },
+  { x: 1450, y: CHAO_Y - 300, largura: 160, altura: 32 },
+  { x: 1800, y: CHAO_Y - 64,  largura: 64,  altura: 64 }, // bloco no chão
+  { x: 2000, y: CHAO_Y - 130, largura: 224, altura: 32 },
+  { x: 2350, y: CHAO_Y - 96,  largura: 64,  altura: 96 }, // muro alto
+  { x: 2550, y: CHAO_Y - 120, largura: 160, altura: 32 },
+  { x: 2800, y: CHAO_Y - 220, largura: 192, altura: 32 },
+];
+
+// ---------- Teclado ----------
+// Guarda quais teclas estão pressionadas agora (usando e.code, a tecla física).
+const teclas = {};
+
+window.addEventListener("keydown", (e) => {
+  // impede a página de rolar com setas/espaço
+  if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space"].includes(e.code)) {
+    e.preventDefault();
+  }
+  // o pulo é "lembrado" por um instante (buffer), não precisa de timing perfeito
+  if (e.code === "Space" && !e.repeat) {
+    jogador.bufferPulo = TEMPO_BUFFER_PULO;
+  }
+  teclas[e.code] = true;
+});
+
+window.addEventListener("keyup", (e) => {
+  teclas[e.code] = false;
+  // pulo variável: soltar o espaço cedo faz um pulo mais baixo
+  if (e.code === "Space" && jogador.vy < 0) {
+    jogador.vy *= 0.45;
+  }
+});
+
+// se a janela perder o foco, solta todas as teclas (evita andar sozinho)
+window.addEventListener("blur", () => {
+  for (const k in teclas) teclas[k] = false;
+});
+
+// ---------- Funções auxiliares ----------
+
+// Move "valor" em direção a "alvo" sem passar dele
+function aproximar(valor, alvo, passo) {
+  if (valor < alvo) return Math.min(valor + passo, alvo);
+  return Math.max(valor - passo, alvo);
+}
+
+// Dois retângulos estão se sobrepondo?
+function colide(a, b) {
+  return a.x < b.x + b.largura && a.x + a.largura > b.x &&
+         a.y < b.y + b.altura && a.y + a.altura > b.y;
+}
+
+// ---------- Lógica do jogador ----------
+
+function atualizarJogador(dt) {
+  const j = jogador;
+
+  // 1) Direção escolhida pelo teclado: -1 esquerda, 0 parado, 1 direita
+  const esquerda = teclas.ArrowLeft || teclas.KeyA;
+  const direita = teclas.ArrowRight || teclas.KeyD;
+  const direcao = (direita ? 1 : 0) - (esquerda ? 1 : 0);
+  if (direcao !== 0) j.olhandoDireita = direcao > 0;
+
+  // 2) Acelera suavemente até a velocidade desejada
+  const aceleracao = j.noChao ? ACELERACAO_CHAO : ACELERACAO_AR;
+  j.vx = aproximar(j.vx, direcao * VELOCIDADE_ANDAR, aceleracao * dt);
+
+  // 3) Pulo (com "coyote time" e "buffer" para o controle ficar gostoso)
+  j.tempoCoyote = j.noChao ? TEMPO_COYOTE : Math.max(0, j.tempoCoyote - dt);
+  j.bufferPulo = Math.max(0, j.bufferPulo - dt);
+  if (j.bufferPulo > 0 && j.tempoCoyote > 0) {
+    j.vy = -FORCA_PULO;
+    j.bufferPulo = 0;
+    j.tempoCoyote = 0;
+    j.noChao = false;
+  }
+
+  // 4) Gravidade
+  j.vy = Math.min(j.vy + GRAVIDADE * dt, VELOCIDADE_MAX_QUEDA);
+
+  // 5) Move no eixo X e resolve colisões laterais
+  j.x += j.vx * dt;
+  for (const p of plataformas) {
+    if (!colide(j, p)) continue;
+    if (j.vx > 0) j.x = p.x - j.largura;   // bateu do lado esquerdo do bloco
+    else if (j.vx < 0) j.x = p.x + p.largura; // bateu do lado direito
+    j.vx = 0;
+  }
+  // não deixa sair das bordas do mundo
+  j.x = Math.max(0, Math.min(j.x, MUNDO_LARGURA - j.largura));
+
+  // 6) Move no eixo Y e resolve colisões de cima/baixo
+  j.y += j.vy * dt;
+  j.noChao = false;
+  for (const p of plataformas) {
+    if (!colide(j, p)) continue;
+    if (j.vy > 0) {
+      j.y = p.y - j.altura; // caiu em cima da plataforma
+      j.noChao = true;
+    } else if (j.vy < 0) {
+      j.y = p.y + p.altura; // bateu a cabeça embaixo
+    }
+    j.vy = 0;
+  }
+}
+
+// A câmera segue o jogador com suavidade, sem sair do mundo
+function atualizarCamera(dt) {
+  const alvo = jogador.x + jogador.largura / 2 - LARGURA * 0.4;
+  const limitado = Math.max(0, Math.min(alvo, MUNDO_LARGURA - LARGURA));
+  estado.camera += (limitado - estado.camera) * Math.min(1, dt * 8);
+}
 
 // ---------- Elementos do cenário (gerados uma vez) ----------
 
@@ -42,7 +187,7 @@ while (px < LARGURA * 2) {
 }
 const LARGURA_CIDADE = px; // usado para repetir os prédios infinitamente
 
-// ---------- Funções de desenho ----------
+// ---------- Funções de desenho do cenário ----------
 
 // Céu com degradê do azul ao amarelo claro perto do horizonte
 function desenharCeu() {
@@ -173,13 +318,120 @@ function desenharCenario() {
   desenharChao();
 }
 
-// Texto temporário no topo da tela
+// ---------- Desenho das plataformas e do personagem ----------
+
+// Plataformas de tijolinhos
+function desenharPlataformas() {
+  for (const p of plataformas) {
+    if (p.chao) continue; // o chão já foi desenhado no cenário
+    const x = Math.round(p.x - estado.camera);
+    if (x + p.largura < 0 || x > LARGURA) continue; // fora da tela
+
+    // fundo do bloco
+    ctx.fillStyle = "#c8642a";
+    ctx.fillRect(x, p.y, p.largura, p.altura);
+
+    // tijolos (linhas alternadas deslocadas), recortados dentro do bloco
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, p.y, p.largura, p.altura);
+    ctx.clip();
+    ctx.strokeStyle = "#7a3512";
+    ctx.lineWidth = 2;
+    for (let by = 0; by < p.altura; by += 16) {
+      const desloc = (by / 16) % 2 === 0 ? 0 : 16;
+      for (let bx = -desloc; bx < p.largura; bx += 32) {
+        ctx.strokeRect(x + bx + 1, p.y + by + 1, 30, 14);
+      }
+    }
+    ctx.restore();
+
+    // brilho no topo e contorno
+    ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
+    ctx.fillRect(x, p.y, p.largura, 3);
+    ctx.strokeStyle = "#4a1f08";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x + 1, p.y + 1, p.largura - 2, p.altura - 2);
+  }
+}
+
+// Nine: corpo retangular vermelho, rosto e barba branca
+function desenharJogador() {
+  const j = jogador;
+  const x = Math.round(j.x - estado.camera);
+  const y = Math.round(j.y);
+  const w = j.largura;
+  const h = j.altura;
+
+  // pernas balançam quando está andando no chão
+  const andando = j.noChao && Math.abs(j.vx) > 20;
+  const passo = andando ? Math.sin(estado.tempo * 18) * 3 : 0;
+
+  // sombra no chão/plataforma
+  if (j.noChao) {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+    ctx.beginPath();
+    ctx.ellipse(x + w / 2, y + h, w / 2, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // pernas
+  ctx.fillStyle = "#3a2a20";
+  ctx.fillRect(x + 5, y + h - 10 + passo, 11, 10 - passo);
+  ctx.fillRect(x + w - 16, y + h - 10 - passo, 11, 10 + passo);
+
+  // corpo (roupa vermelha)
+  ctx.fillStyle = "#d62828";
+  ctx.fillRect(x, y + 18, w, h - 26);
+  ctx.strokeStyle = "#5c0d0d";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, y + 19, w - 2, h - 28);
+
+  // cinto
+  ctx.fillStyle = "#7a0f0f";
+  ctx.fillRect(x, y + 38, w, 4);
+
+  // cabeça (pele) com cabelo branco
+  ctx.fillStyle = "#f1c27d";
+  ctx.fillRect(x + 4, y, w - 8, 22);
+  ctx.fillStyle = "#f5f5f5";
+  ctx.fillRect(x + 4, y, w - 8, 5);
+
+  // olho e nariz do lado para onde está olhando
+  const dir = j.olhandoDireita;
+  ctx.fillStyle = "#222";
+  ctx.fillRect(dir ? x + w - 14 : x + 10, y + 7, 4, 4);
+  ctx.fillStyle = "#e0a96d";
+  ctx.fillRect(dir ? x + w - 6 : x + 2, y + 10, 4, 5);
+
+  // barba branca (desce um pouco sobre a roupa)
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.moveTo(x + 4, y + 13);
+  ctx.lineTo(x + w - 4, y + 13);
+  ctx.lineTo(x + w - 4, y + 24);
+  ctx.quadraticCurveTo(x + w / 2, y + 38, x + 4, y + 24);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#cfcfcf";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // nome acima da cabeça
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 12px 'Trebuchet MS', Arial";
+  ctx.textAlign = "center";
+  ctx.fillText(j.nome, x + w / 2, y - 6);
+  ctx.textAlign = "left";
+}
+
+// Instruções no topo da tela
 function desenharHUD() {
   ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
-  ctx.fillRect(16, 16, 300, 40);
+  ctx.fillRect(16, 16, 330, 40);
   ctx.fillStyle = "#fff";
-  ctx.font = "bold 18px 'Trebuchet MS', Arial";
-  ctx.fillText("Seu Fartura chega em breve...", 28, 42);
+  ctx.font = "bold 16px 'Trebuchet MS', Arial";
+  ctx.fillText("← → ou A/D: andar   Espaço: pular", 28, 42);
 }
 
 // ---------- Loop principal ----------
@@ -188,11 +440,23 @@ function desenharHUD() {
 // assim o jogo roda na mesma velocidade em qualquer monitor (60Hz, 144Hz...).
 function atualizar(dt) {
   estado.tempo += dt;
-  estado.camera += estado.velocidadeCamera * dt;
+
+  // divide o quadro em passos pequenos para o jogador nunca "atravessar"
+  // uma plataforma fina quando está caindo rápido
+  let restante = dt;
+  while (restante > 0) {
+    const passo = Math.min(restante, 1 / 120);
+    atualizarJogador(passo);
+    restante -= passo;
+  }
+
+  atualizarCamera(dt);
 }
 
 function desenhar() {
   desenharCenario();
+  desenharPlataformas();
+  desenharJogador();
   desenharHUD();
 }
 
